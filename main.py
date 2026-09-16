@@ -1,8 +1,10 @@
 import ctypes
+import json
 import os
 import random
 import sys
 import tkinter as tk
+import time
 from dataclasses import dataclass
 
 from PIL import Image, ImageTk
@@ -37,6 +39,7 @@ WIN_IMAGE_NAME = "result_win"
 FAIL_IMAGE_NAME = "result_fail"
 RESULT_IMAGE_BOX = (300, 240)
 RESULT_FRAME_DELAY_MS = 100
+SAVE_FILE_NAME = "savegame.json"
 
 DIRECTIONS = {
     "U": (-1, 0, "上"),
@@ -272,6 +275,7 @@ class ArrowEscapeGame:
         self.root.bind("<F11>", lambda _event: self.toggle_fullscreen())
         self.root.bind("<Escape>", lambda _event: self.handle_escape())
         self.root.bind("<Configure>", self.handle_configure)
+        self.root.protocol("WM_DELETE_WINDOW", self.close_game)
 
         self.level_index = 0
         self.arrows = []
@@ -279,6 +283,7 @@ class ArrowEscapeGame:
         self.moves = 0
         self.blocked_attempts = 0
         self.elapsed_seconds = 0
+        self.timer_started_at = None
         self.timer_id = None
         self.animating = False
         self.session_id = 0
@@ -288,6 +293,7 @@ class ArrowEscapeGame:
         self.current_view = "start"
         self.result_passed = False
         self.level_scores = {}
+        self.max_unlocked_level = 0
         self.resize_after_id = None
         self.last_size = None
         self.result_frames = []
@@ -303,6 +309,67 @@ class ArrowEscapeGame:
         self.container.pack(fill="both", expand=True)
         self.show_start_screen()
 
+    @property
+    def save_path(self):
+        base_dir = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__))
+        return os.path.join(base_dir, SAVE_FILE_NAME)
+
+    def close_game(self):
+        if self.current_view == "game":
+            self.save_progress()
+        self.root.destroy()
+
+    def save_progress(self, next_level=None):
+        if self.current_view != "game" or not self.arrows:
+            return False
+        data = {
+            "level_index": self.level_index,
+            "next_level": next_level,
+            "active": [arrow.active for arrow in self.arrows],
+            "mistakes_left": self.mistakes_left,
+            "moves": self.moves,
+            "blocked_attempts": self.blocked_attempts,
+            "elapsed_seconds": self.current_elapsed_seconds(),
+            "level_scores": {str(key): value for key, value in self.level_scores.items()},
+            "max_unlocked_level": self.max_unlocked_level,
+        }
+        try:
+            with open(self.save_path, "w", encoding="utf-8") as handle:
+                json.dump(data, handle, ensure_ascii=False, indent=2)
+            return True
+        except OSError:
+            return False
+
+    def read_saved_progress(self):
+        try:
+            with open(self.save_path, "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+            level_index = data.get("next_level")
+            if level_index is None:
+                level_index = data.get("level_index")
+            if not isinstance(level_index, int) or not 0 <= level_index < len(LEVELS):
+                return None
+            active = data.get("active", [])
+            if level_index == data.get("level_index") and len(active) != len(LEVELS[level_index]["arrows"]):
+                return None
+            return data
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            return None
+
+    def current_elapsed_seconds(self):
+        if self.timer_started_at is None:
+            return int(self.elapsed_seconds)
+        return max(0, int(time.monotonic() - self.timer_started_at))
+
+    def clear_saved_progress(self):
+        try:
+            os.remove(self.save_path)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            return False
+        return True
+
     def clear(self):
         if self.timer_id is not None:
             self.root.after_cancel(self.timer_id)
@@ -315,7 +382,7 @@ class ArrowEscapeGame:
         if self.fullscreen:
             self.toggle_fullscreen(False)
         else:
-            self.show_start_screen()
+            self.return_to_menu()
 
     def toggle_fullscreen(self, enabled=None):
         if enabled is None:
@@ -357,6 +424,8 @@ class ArrowEscapeGame:
             return
         if self.current_view == "start":
             self.show_start_screen()
+        elif self.current_view == "level_select":
+            self.show_level_select()
         elif self.current_view == "game":
             self.load_level(self.level_index, preserve_state=True)
         elif self.current_view == "level_clear":
@@ -412,22 +481,80 @@ class ArrowEscapeGame:
         canvas.create_text(78, 204, text="点击箭头，让它沿着自己的方向离开棋盘", anchor="w", fill=TEXT_MUTED, font=("Microsoft YaHei UI", 14))
 
         left = tk.Frame(canvas, bg=PANEL_BG, highlightthickness=1, highlightbackground=BORDER)
-        left.place(x=78, y=280, width=400, height=420)
+        left.place(x=78, y=280, width=400, height=460)
         tk.Label(left, text="游戏目标", bg=PANEL_BG, fg=GOLD, font=("Microsoft YaHei UI", 12, "bold")).pack(anchor="w", padx=28, pady=(24, 8))
         tk.Label(left, text="清空棋盘上的所有箭头", wraplength=340, justify="left", bg=PANEL_BG, fg=TEXT, font=("Microsoft YaHei UI", 16, "bold")).pack(anchor="w", padx=28)
         tk.Label(left, text="如果箭头前方有其他箭头，它会被阻挡。\n每次误点都会消耗一次机会。", wraplength=330, justify="left", bg=PANEL_BG, fg=TEXT_MUTED, font=("Microsoft YaHei UI", 11), pady=14).pack(anchor="w", padx=28)
         tk.Label(left, text="5 个关卡  ·  棋盘逐步变大  ·  每关独立计时", bg=PANEL_BG, fg=TEXT_MUTED, font=("Microsoft YaHei UI", 9)).pack(anchor="w", padx=28, pady=(6, 0))
         start_button = self.make_button(left, "开始游戏", lambda: self.load_level(0), width=18)
-        start_button.place(relx=0.5, y=335, anchor="n")
+        start_button.place(relx=0.5, y=300, anchor="n")
+        continue_button = self.make_button(left, "继续游戏", self.continue_saved_game, color=SECONDARY, width=18)
+        continue_button.place(relx=0.5, y=355, anchor="n")
+        select_button = self.make_button(left, "选择关卡", self.show_level_select, color=SECONDARY, width=18)
+        select_button.place(relx=0.5, y=410, anchor="n")
 
         preview = tk.Frame(canvas, bg=PANEL_LIGHT, highlightthickness=1, highlightbackground=BORDER)
-        preview.place(x=540, y=280, width=380, height=420)
+        preview.place(x=540, y=280, width=380, height=460)
         tk.Label(preview, text="方向预览", bg=PANEL_LIGHT, fg=TEXT, font=("Microsoft YaHei UI", 14, "bold")).pack(anchor="w", padx=24, pady=(22, 8))
         demo = tk.Canvas(preview, width=330, height=235, bg=BOARD_BG, highlightthickness=1, highlightbackground=BORDER)
         demo.pack(padx=24, pady=5)
         self.draw_demo(demo)
 
         canvas.create_text(78, 790, text="快捷键：R 重开本关    H 查看提示    Esc 返回主菜单", anchor="w", fill=HELPER, font=("Microsoft YaHei UI", 10))
+
+    def continue_saved_game(self):
+        saved = self.read_saved_progress()
+        if saved is None:
+            self.show_level_select()
+            return
+        next_level = saved.get("next_level")
+        if isinstance(next_level, int) and 0 <= next_level < len(LEVELS):
+            next_state = dict(saved)
+            next_state["level_index"] = next_level
+            next_state["active"] = []
+            next_state["elapsed_seconds"] = 0
+            next_state["moves"] = 0
+            next_state["blocked_attempts"] = 0
+            self.load_level(next_level, saved_state=next_state)
+        else:
+            self.load_level(saved["level_index"], saved_state=saved)
+
+    def unlocked_level_count(self):
+        saved = self.read_saved_progress()
+        unlocked = getattr(self, "max_unlocked_level", 0)
+        if saved:
+            unlocked = max(unlocked, int(saved.get("max_unlocked_level", 0)))
+            level_index = saved.get("level_index")
+            if isinstance(level_index, int):
+                unlocked = max(unlocked, level_index)
+            next_level = saved.get("next_level")
+            if isinstance(next_level, int):
+                unlocked = max(unlocked, next_level)
+        return min(len(LEVELS), unlocked + 1)
+
+    def show_level_select(self):
+        self.current_view = "level_select"
+        self.session_id += 1
+        self.animating = False
+        self.clear()
+        canvas = tk.Canvas(self.container, highlightthickness=0)
+        canvas.pack()
+        self.draw_background(canvas)
+        panel = tk.Frame(canvas, bg=PANEL_BG, highlightthickness=1, highlightbackground=BORDER)
+        panel.place(x=220, y=85, width=560, height=730)
+        tk.Label(panel, text="选择关卡", bg=PANEL_BG, fg=ACCENT, font=("Microsoft YaHei UI", 25, "bold")).pack(pady=(34, 8))
+        tk.Label(panel, text="已解锁的关卡可以重复挑战", bg=PANEL_BG, fg=TEXT_MUTED, font=("Microsoft YaHei UI", 11)).pack(pady=(0, 22))
+        unlocked = self.unlocked_level_count()
+        for index, level in enumerate(LEVELS):
+            if index < unlocked:
+                text = f"第 {index + 1} 关  ·  {level['name']}"
+                color = ACCENT if index == 0 else SECONDARY
+                button = self.make_button(panel, text, lambda i=index: self.load_level(i), color=color, width=24)
+            else:
+                button = self.make_button(panel, f"第 {index + 1} 关  ·  尚未解锁", lambda: None, color="#f1e4dc", width=24)
+                button.configure(state="disabled", disabledforeground=TEXT_MUTED)
+            button.pack(pady=6)
+        self.make_button(panel, "返回主界面", self.show_start_screen, color=SECONDARY, width=18).pack(pady=(22, 0))
 
     def draw_demo(self, canvas):
         cell = 52
@@ -441,7 +568,7 @@ class ArrowEscapeGame:
             canvas.create_oval(x - 18, y - 18, x + 18, y + 18, fill=ARROW_COLORS[direction], outline="#ffffff", width=2)
             canvas.create_polygon(self.arrow_points(x, y, direction, 0.7), fill=INK, outline=INK)
 
-    def load_level(self, index, preserve_state=False):
+    def load_level(self, index, preserve_state=False, saved_state=None):
         if not 0 <= index < len(LEVELS):
             return
         preserved = None
@@ -451,9 +578,12 @@ class ArrowEscapeGame:
                 "mistakes_left": self.mistakes_left,
                 "moves": self.moves,
                 "blocked_attempts": self.blocked_attempts,
-                "elapsed_seconds": self.elapsed_seconds,
+                "elapsed_seconds": self.current_elapsed_seconds(),
                 "level_scores": self.level_scores,
+                "max_unlocked_level": self.max_unlocked_level,
             }
+        elif saved_state is not None:
+            preserved = saved_state
         self.session_id += 1
         self.clear()
         self.current_view = "game"
@@ -464,19 +594,28 @@ class ArrowEscapeGame:
         self.moves = 0
         self.blocked_attempts = 0
         self.elapsed_seconds = 0
+        self.timer_started_at = time.monotonic()
         self.timer_text.set("00:00")
         if preserved is not None:
-            for arrow, active in zip(self.arrows, preserved["active"]):
+            for arrow, active in zip(self.arrows, preserved.get("active", [])):
                 arrow.active = active
-            self.mistakes_left = preserved["mistakes_left"]
-            self.moves = preserved["moves"]
-            self.blocked_attempts = preserved["blocked_attempts"]
-            self.elapsed_seconds = preserved["elapsed_seconds"]
-            self.level_scores = preserved["level_scores"]
+            self.mistakes_left = preserved.get("mistakes_left", self.mistakes_left)
+            self.moves = preserved.get("moves", self.moves)
+            self.blocked_attempts = preserved.get("blocked_attempts", self.blocked_attempts)
+            self.elapsed_seconds = preserved.get("elapsed_seconds", self.elapsed_seconds)
+            self.timer_started_at = time.monotonic() - self.elapsed_seconds
+            self.level_scores = {
+                int(key): value for key, value in preserved.get("level_scores", {}).items()
+            }
+            self.max_unlocked_level = max(
+                self.max_unlocked_level,
+                int(preserved.get("max_unlocked_level", index)),
+            )
             minutes, seconds = divmod(self.elapsed_seconds, 60)
             self.timer_text.set(f"{minutes:02d}:{seconds:02d}")
         elif index == 0:
             self.level_scores = {}
+        self.max_unlocked_level = max(getattr(self, "max_unlocked_level", 0), index)
         self.animating = False
         self.hover_index = None
         self.arrow_items = {}
@@ -486,7 +625,8 @@ class ArrowEscapeGame:
         header.pack(fill="x")
         tk.Label(header, text="箭路突围", bg=WINDOW_BG, fg=ACCENT, font=("Microsoft YaHei UI", 16, "bold")).pack(side="left")
         tk.Label(header, text=f"  /  第 {index + 1} 关 · {level['name']}", bg=WINDOW_BG, fg=TEXT_MUTED, font=("Microsoft YaHei UI", 13, "bold")).pack(side="left")
-        self.make_button(header, "主菜单", self.show_start_screen, color=SECONDARY, width=8).pack(side="right")
+        self.make_button(header, "主菜单", self.return_to_menu, color=SECONDARY, width=8).pack(side="right")
+        self.make_button(header, "保存", self.save_and_notify, color=SECONDARY, width=7).pack(side="right", padx=8)
         self.make_button(header, "重新开始", self.restart_level, color=SECONDARY, width=9).pack(side="right", padx=8)
         self.make_button(header, "提示", self.show_hint, color=SECONDARY, width=7).pack(side="right")
 
@@ -522,14 +662,24 @@ class ArrowEscapeGame:
         return label
 
     def tick_timer(self):
-        if self.animating or not self.arrows or self.session_id <= 0:
+        if self.current_view != "game" or not self.arrows or self.session_id <= 0:
             return
+        self.elapsed_seconds = self.current_elapsed_seconds()
         minutes, seconds = divmod(self.elapsed_seconds, 60)
         self.timer_text.set(f"{minutes:02d}:{seconds:02d}")
         if hasattr(self, "stat_timer"):
             self.stat_timer.config(text=self.timer_text.get())
-        self.elapsed_seconds += 1
-        self.timer_id = self.root.after(1000, self.tick_timer)
+        self.timer_id = self.root.after(200, self.tick_timer)
+
+    def save_and_notify(self):
+        if self.save_progress():
+            self.update_status("进度已保存，可以从主界面继续游戏。")
+        else:
+            self.update_status("进度保存失败，请检查文件夹权限。")
+
+    def return_to_menu(self):
+        self.save_progress()
+        self.show_start_screen()
 
     def draw_board(self):
         self.canvas.delete("all")
@@ -731,19 +881,21 @@ class ArrowEscapeGame:
             self.show_result(False)
         else:
             self.update_status("路线被挡住了，请调整点击顺序。")
-            self.tick_timer()
 
     def after_arrow_removed(self):
         if all(not arrow.active for arrow in self.arrows):
+            self.elapsed_seconds = self.current_elapsed_seconds()
             score = calculate_level_score(self.level_index, self.elapsed_seconds, self.blocked_attempts)
             self.level_scores[self.level_index] = score
             if self.level_index == len(LEVELS) - 1:
+                self.clear_saved_progress()
                 self.show_result(True)
             else:
+                self.max_unlocked_level = max(self.max_unlocked_level, self.level_index + 1)
+                self.save_progress(next_level=self.level_index + 1)
                 self.show_level_clear()
         else:
             self.update_status("不错，棋盘正在逐步打开。")
-            self.tick_timer()
 
     def show_level_clear(self):
         self.current_view = "level_clear"
