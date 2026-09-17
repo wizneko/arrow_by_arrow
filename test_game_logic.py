@@ -33,6 +33,9 @@ class ArrowGameLogicTests(unittest.TestCase):
     def test_all_directions_are_defined(self):
         self.assertEqual(set(DIRECTIONS), {"U", "D", "L", "R"})
 
+    def test_each_level_allows_two_mistakes(self):
+        self.assertEqual({level["mistakes"] for level in LEVELS}, {2})
+
     def test_horizontal_directions_use_correct_movement(self):
         self.assertEqual(DIRECTIONS["L"][:2], (0, -1))
         self.assertEqual(DIRECTIONS["R"][:2], (0, 1))

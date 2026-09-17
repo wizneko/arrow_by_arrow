@@ -5,6 +5,8 @@ import random
 import sys
 import tkinter as tk
 import time
+import queue
+import threading
 from dataclasses import dataclass
 
 from PIL import Image, ImageTk
@@ -51,6 +53,7 @@ SOUND_NAMES = {
     "win": "level_win.wav",
     "fail": "level_fail.wav",
 }
+SOUND_QUEUE = queue.Queue()
 
 DIRECTIONS = {
     "U": (-1, 0, "上"),
@@ -206,18 +209,18 @@ def build_random_level(rows, cols, count, seed, minimum_blocked):
 
 
 LEVELS = [
-    {"name": "启程", "subtitle": "熟悉四种方向与阻挡规则", "rows": 5, "cols": 5, "mistakes": 5, "difficulty": 1, "par_time": 35,
+    {"name": "启程", "subtitle": "熟悉四种方向与阻挡规则", "rows": 5, "cols": 5, "mistakes": 2, "difficulty": 1, "par_time": 35,
      "arrows": make_arrows([
          (0, 1, "U"), (1, 3, "R"), (2, 0, "R"), (2, 4, "D"),
          (4, 2, "D"), (3, 1, "L"), (1, 1, "D"), (4, 4, "L"),
      ])},
-    {"name": "交错", "subtitle": "18 支箭头随机散落，寻找第一处突破口", "rows": 6, "cols": 6, "mistakes": 6, "difficulty": 2, "par_time": 55,
+    {"name": "交错", "subtitle": "18 支箭头随机散落，寻找第一处突破口", "rows": 6, "cols": 6, "mistakes": 2, "difficulty": 2, "par_time": 55,
      "arrows": build_random_level(6, 6, 18, 1202, 7)},
-    {"name": "回廊", "subtitle": "28 支箭头交叉分布，错误顺序会被连续阻挡", "rows": 7, "cols": 7, "mistakes": 7, "difficulty": 3, "par_time": 85,
+    {"name": "回廊", "subtitle": "28 支箭头交叉分布，错误顺序会被连续阻挡", "rows": 7, "cols": 7, "mistakes": 2, "difficulty": 3, "par_time": 85,
      "arrows": build_random_level(7, 7, 28, 2303, 13)},
-    {"name": "迷宫", "subtitle": "48 支箭头打乱方向，逐层拆解阻挡关系", "rows": 8, "cols": 8, "mistakes": 8, "difficulty": 4, "par_time": 120,
+    {"name": "迷宫", "subtitle": "48 支箭头打乱方向，逐层拆解阻挡关系", "rows": 8, "cols": 8, "mistakes": 2, "difficulty": 4, "par_time": 120,
      "arrows": build_random_level(8, 8, 48, 3404, 24)},
-    {"name": "终局", "subtitle": "61 支箭头高密度乱序，完成最后的路线推演", "rows": 9, "cols": 9, "mistakes": 9, "difficulty": 5, "par_time": 170,
+    {"name": "终局", "subtitle": "61 支箭头高密度乱序，完成最后的路线推演", "rows": 9, "cols": 9, "mistakes": 2, "difficulty": 5, "par_time": 170,
      "arrows": build_random_level(9, 9, 61, 4505, 32)},
 ]
 
@@ -296,20 +299,33 @@ def enable_high_dpi():
             pass
 
 
+def _sound_worker():
+    """Play queued effects serially so sounds cannot interrupt one another."""
+    while True:
+        name = SOUND_QUEUE.get()
+        try:
+            if winsound is None:
+                continue
+            filename = SOUND_NAMES.get(name)
+            if not filename:
+                continue
+            path = os.path.join(ASSET_DIR, filename)
+            if os.path.exists(path):
+                winsound.PlaySound(path, winsound.SND_FILENAME)
+        except (OSError, RuntimeError):
+            pass
+        finally:
+            SOUND_QUEUE.task_done()
+
+
+if winsound is not None:
+    threading.Thread(target=_sound_worker, name="arrow-sound-worker", daemon=True).start()
+
+
 def play_sound(name):
-    """Play a short local effect without blocking Tkinter animations."""
-    if winsound is None:
-        return
-    filename = SOUND_NAMES.get(name)
-    if not filename:
-        return
-    path = os.path.join(ASSET_DIR, filename)
-    if not os.path.exists(path):
-        return
-    try:
-        winsound.PlaySound(path, winsound.SND_FILENAME | winsound.SND_ASYNC)
-    except (OSError, RuntimeError):
-        pass
+    """Queue a local effect without blocking Tkinter animations."""
+    if winsound is not None and name in SOUND_NAMES:
+        SOUND_QUEUE.put(name)
 
 
 class RoundedButton(tk.Canvas):
@@ -775,7 +791,8 @@ class ArrowEscapeGame:
         if preserved is not None:
             for arrow, active in zip(self.arrows, preserved.get("active", [])):
                 arrow.active = active
-            self.mistakes_left = preserved.get("mistakes_left", self.mistakes_left)
+            # Older save files may contain the previous, larger mistake limit.
+            self.mistakes_left = max(0, min(2, int(preserved.get("mistakes_left", self.mistakes_left))))
             self.moves = preserved.get("moves", self.moves)
             self.blocked_attempts = preserved.get("blocked_attempts", self.blocked_attempts)
             self.elapsed_seconds = preserved.get("elapsed_seconds", self.elapsed_seconds)
