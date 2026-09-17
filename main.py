@@ -1100,7 +1100,8 @@ class ArrowEscapeGame:
                 self.update_status("不错，棋盘正在逐步打开。")
 
     def show_level_clear(self):
-        play_sound("win")
+        if self.current_view != "level_clear":
+            play_sound("win")
         self.current_view = "level_clear"
         self.session_id += 1
         self.animating = False
@@ -1203,7 +1204,8 @@ class ArrowEscapeGame:
         self.result_frame_delays = []
 
     def show_result(self, passed):
-        play_sound("win" if passed else "fail")
+        if self.current_view != "result" or self.result_passed != passed:
+            play_sound("win" if passed else "fail")
         self.current_view = "result"
         self.result_passed = passed
         self.session_id += 1
