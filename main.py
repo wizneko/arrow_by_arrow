@@ -647,9 +647,9 @@ class ArrowEscapeGame:
         tk.Label(left, text="如果箭头前方有其他箭头，它会被阻挡。\n每次误点都会消耗一次机会。", wraplength=330, justify="left", bg=PANEL_BG, fg=TEXT_MUTED, font=("Microsoft YaHei UI", 11), pady=14).pack(anchor="w", padx=28)
         tk.Label(left, text="5 个关卡  ·  棋盘逐步变大  ·  每关独立计时", bg=PANEL_BG, fg=TEXT_MUTED, font=("Microsoft YaHei UI", 9)).pack(anchor="w", padx=28, pady=(6, 0))
         actions = tk.Frame(left, bg=PANEL_BG)
-        actions.pack(fill="x", padx=28, pady=(30, 28))
-        self.make_button(actions, "开始游戏", lambda: self.load_level(0), width=18).pack(pady=(0, 16))
-        self.make_button(actions, "继续游戏", self.continue_saved_game, color=SECONDARY, width=18).pack(pady=(0, 16))
+        actions.pack(fill="x", padx=28, pady=(16, 16))
+        self.make_button(actions, "开始游戏", lambda: self.load_level(0), width=18).pack(pady=(0, 10))
+        self.make_button(actions, "继续游戏", self.continue_saved_game, color=SECONDARY, width=18).pack(pady=(0, 10))
         self.make_button(actions, "选择关卡", self.show_level_select, color=SECONDARY, width=18).pack()
 
         preview = tk.Frame(canvas, bg=PANEL_LIGHT, highlightthickness=1, highlightbackground=BORDER)
@@ -673,8 +673,8 @@ class ArrowEscapeGame:
             cell = tk.Frame(direction_guide, bg=ARROW_COLORS[direction], highlightthickness=1, highlightbackground="#ffffff")
             cell.grid(row=0, column=column, padx=(0 if column == 0 else 5, 0), sticky="nsew")
             direction_guide.grid_columnconfigure(column, weight=1)
-            tk.Label(cell, text=symbol, bg=ARROW_COLORS[direction], fg=INK, font=("Microsoft YaHei UI", 18, "bold")).pack(pady=(3, 0))
-            tk.Label(cell, text=name, bg=ARROW_COLORS[direction], fg=INK, font=("Microsoft YaHei UI", 9, "bold")).pack(pady=(0, 5))
+            tk.Label(cell, text=symbol, bg=ARROW_COLORS[direction], fg=INK, font=("Microsoft YaHei UI", 16, "bold")).pack(pady=(0, 0))
+            tk.Label(cell, text=name, bg=ARROW_COLORS[direction], fg=INK, font=("Microsoft YaHei UI", 8, "bold")).pack(pady=(0, 2))
 
         canvas.create_text(78, 812, text="快捷键：R 重开本关    H 查看提示    Esc 返回主菜单", anchor="w", fill=HELPER, font=("Microsoft YaHei UI", 10))
 
