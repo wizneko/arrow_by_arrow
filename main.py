@@ -259,6 +259,96 @@ def enable_high_dpi():
             pass
 
 
+class RoundedButton(tk.Canvas):
+    """A compact rounded button that keeps the warm visual style consistent."""
+
+    def __init__(self, parent, text, command, fill, foreground, hover_fill, font, width, height=48):
+        super().__init__(
+            parent,
+            width=width,
+            height=height,
+            bg=parent.cget("bg"),
+            highlightthickness=0,
+            bd=0,
+            cursor="hand2",
+        )
+        self.button_text = text
+        self.command = command
+        self.fill_color = fill
+        self.foreground = foreground
+        self.hover_fill = hover_fill
+        self.button_font = font
+        self.button_width = width
+        self.button_height = height
+        self.button_state = "normal"
+        self.disabled_foreground = TEXT_MUTED
+        self.hovered = False
+        self.bind("<Enter>", self._on_enter)
+        self.bind("<Leave>", self._on_leave)
+        self.bind("<Button-1>", self._on_click)
+        self._draw()
+
+    def _on_enter(self, _event):
+        self.hovered = True
+        self._draw()
+
+    def _on_leave(self, _event):
+        self.hovered = False
+        self._draw()
+
+    def _on_click(self, _event):
+        if self.button_state != "disabled" and self.command is not None:
+            self.command()
+
+    def _draw(self):
+        self.delete("all")
+        disabled = self.button_state == "disabled"
+        fill = "#f1e4dc" if disabled else (self.hover_fill if self.hovered else self.fill_color)
+        foreground = self.disabled_foreground if disabled else self.foreground
+        x1, y1 = 2, 2
+        x2, y2 = self.button_width - 2, self.button_height - 2
+        radius = min(16, (y2 - y1) // 2)
+        self._rounded_rectangle(x1, y1, x2, y2, radius, fill)
+        self.create_text(
+            (x1 + x2) / 2,
+            (y1 + y2) / 2,
+            text=self.button_text,
+            fill=foreground,
+            font=self.button_font,
+        )
+
+    def _rounded_rectangle(self, x1, y1, x2, y2, radius, fill):
+        self.create_rectangle(x1 + radius, y1, x2 - radius, y2, fill=fill, outline=fill)
+        self.create_rectangle(x1, y1 + radius, x2, y2 - radius, fill=fill, outline=fill)
+        for box, start in (
+            ((x1, y1, x1 + radius * 2, y1 + radius * 2), 90),
+            ((x2 - radius * 2, y1, x2, y1 + radius * 2), 0),
+            ((x2 - radius * 2, y2 - radius * 2, x2, y2), 270),
+            ((x1, y2 - radius * 2, x1 + radius * 2, y2), 180),
+        ):
+            self.create_arc(box, start=start, extent=90, fill=fill, outline=fill)
+
+    def configure(self, cnf=None, **kwargs):
+        options = dict(cnf or {}) if isinstance(cnf, dict) else {}
+        options.update(kwargs)
+        if "state" in options:
+            self.button_state = options.pop("state")
+            self._draw()
+        if "disabledforeground" in options:
+            self.disabled_foreground = options.pop("disabledforeground")
+            self._draw()
+        if "text" in options:
+            self.button_text = options.pop("text")
+            self._draw()
+        return super().configure(**options)
+
+    config = configure
+
+    def invoke(self):
+        if self.button_state != "disabled" and self.command is not None:
+            self.command()
+
+
 class ArrowEscapeGame:
     def __init__(self, root: tk.Tk):
         self.root = root
@@ -451,12 +541,19 @@ class ArrowEscapeGame:
 
     def make_button(self, parent, text, command, color=ACCENT_DARK, width=12):
         foreground = "#fffaf5" if color in (ACCENT_DARK, ACCENT, BUTTON_HOVER) else INK
-        button = tk.Button(parent, text=text, command=command, width=width, font=("Microsoft YaHei UI", 11, "bold"),
-                           bg=color, fg=foreground, activebackground=BUTTON_HOVER, activeforeground="#fffaf5",
-                           relief="flat", bd=0, cursor="hand2", padx=10, pady=8)
-        button.bind("<Enter>", lambda _e: button.configure(bg=BUTTON_HOVER))
-        button.bind("<Leave>", lambda _e: button.configure(bg=color))
-        return button
+        button_width = max(116, round(width * 10 + 36))
+        button_height = 48
+        return RoundedButton(
+            parent,
+            text,
+            command,
+            fill=color,
+            foreground=foreground,
+            hover_fill=BUTTON_HOVER if color in (ACCENT_DARK, ACCENT, BUTTON_HOVER) else "#d9a397",
+            font=self.ui_font(11, bold=True),
+            width=button_width,
+            height=button_height,
+        )
 
     def draw_background(self, canvas):
         canvas.configure(width=WINDOW_WIDTH, height=WINDOW_HEIGHT, bg=WINDOW_BG)
@@ -481,26 +578,42 @@ class ArrowEscapeGame:
         canvas.create_text(78, 204, text="点击箭头，让它沿着自己的方向离开棋盘", anchor="w", fill=TEXT_MUTED, font=("Microsoft YaHei UI", 14))
 
         left = tk.Frame(canvas, bg=PANEL_BG, highlightthickness=1, highlightbackground=BORDER)
-        left.place(x=78, y=280, width=400, height=460)
+        left.place(x=78, y=270, width=400, height=500)
         tk.Label(left, text="游戏目标", bg=PANEL_BG, fg=GOLD, font=("Microsoft YaHei UI", 12, "bold")).pack(anchor="w", padx=28, pady=(24, 8))
         tk.Label(left, text="清空棋盘上的所有箭头", wraplength=340, justify="left", bg=PANEL_BG, fg=TEXT, font=("Microsoft YaHei UI", 16, "bold")).pack(anchor="w", padx=28)
         tk.Label(left, text="如果箭头前方有其他箭头，它会被阻挡。\n每次误点都会消耗一次机会。", wraplength=330, justify="left", bg=PANEL_BG, fg=TEXT_MUTED, font=("Microsoft YaHei UI", 11), pady=14).pack(anchor="w", padx=28)
         tk.Label(left, text="5 个关卡  ·  棋盘逐步变大  ·  每关独立计时", bg=PANEL_BG, fg=TEXT_MUTED, font=("Microsoft YaHei UI", 9)).pack(anchor="w", padx=28, pady=(6, 0))
-        start_button = self.make_button(left, "开始游戏", lambda: self.load_level(0), width=18)
-        start_button.place(relx=0.5, y=300, anchor="n")
-        continue_button = self.make_button(left, "继续游戏", self.continue_saved_game, color=SECONDARY, width=18)
-        continue_button.place(relx=0.5, y=355, anchor="n")
-        select_button = self.make_button(left, "选择关卡", self.show_level_select, color=SECONDARY, width=18)
-        select_button.place(relx=0.5, y=410, anchor="n")
+        actions = tk.Frame(left, bg=PANEL_BG)
+        actions.pack(fill="x", padx=28, pady=(30, 28))
+        self.make_button(actions, "开始游戏", lambda: self.load_level(0), width=18).pack(pady=(0, 14))
+        self.make_button(actions, "继续游戏", self.continue_saved_game, color=SECONDARY, width=18).pack(pady=(0, 14))
+        self.make_button(actions, "选择关卡", self.show_level_select, color=SECONDARY, width=18).pack()
 
         preview = tk.Frame(canvas, bg=PANEL_LIGHT, highlightthickness=1, highlightbackground=BORDER)
-        preview.place(x=540, y=280, width=380, height=460)
+        preview.place(x=540, y=270, width=380, height=500)
         tk.Label(preview, text="方向预览", bg=PANEL_LIGHT, fg=TEXT, font=("Microsoft YaHei UI", 14, "bold")).pack(anchor="w", padx=24, pady=(22, 8))
         demo = tk.Canvas(preview, width=330, height=235, bg=BOARD_BG, highlightthickness=1, highlightbackground=BORDER)
         demo.pack(padx=24, pady=5)
         self.draw_demo(demo)
+        tk.Label(
+            preview,
+            text="箭头会沿自身方向离开棋盘，先观察前方是否有阻挡。",
+            wraplength=320,
+            justify="left",
+            bg=PANEL_LIGHT,
+            fg=TEXT_MUTED,
+            font=("Microsoft YaHei UI", 10),
+        ).pack(anchor="w", padx=24, pady=(12, 8))
+        direction_guide = tk.Frame(preview, bg=PANEL_LIGHT)
+        direction_guide.pack(fill="x", padx=24, pady=(0, 10))
+        for column, (symbol, name, direction) in enumerate((("↑", "向上", "U"), ("↓", "向下", "D"), ("←", "向左", "L"), ("→", "向右", "R"))):
+            cell = tk.Frame(direction_guide, bg=ARROW_COLORS[direction], highlightthickness=1, highlightbackground="#ffffff")
+            cell.grid(row=0, column=column, padx=(0 if column == 0 else 5, 0), sticky="nsew")
+            direction_guide.grid_columnconfigure(column, weight=1)
+            tk.Label(cell, text=symbol, bg=ARROW_COLORS[direction], fg=INK, font=("Microsoft YaHei UI", 18, "bold")).pack(pady=(7, 0))
+            tk.Label(cell, text=name, bg=ARROW_COLORS[direction], fg=INK, font=("Microsoft YaHei UI", 9, "bold")).pack(pady=(0, 7))
 
-        canvas.create_text(78, 790, text="快捷键：R 重开本关    H 查看提示    Esc 返回主菜单", anchor="w", fill=HELPER, font=("Microsoft YaHei UI", 10))
+        canvas.create_text(78, 812, text="快捷键：R 重开本关    H 查看提示    Esc 返回主菜单", anchor="w", fill=HELPER, font=("Microsoft YaHei UI", 10))
 
     def continue_saved_game(self):
         saved = self.read_saved_progress()
