@@ -38,6 +38,11 @@ class UiStabilityTests(unittest.TestCase):
         if game.resize_after_id is not None:
             self.root.after_cancel(game.resize_after_id)
             game.resize_after_id = None
+        if game.ai_after_id is not None:
+            self.root.after_cancel(game.ai_after_id)
+            game.ai_after_id = None
+        game.stop_ai_frame_playback()
+        game.stop_result_frame_playback()
 
     def _count_rebuilds(self, enter_game):
         """让界面空闲一段时间，统计 start / load_level 被重复调用的次数。"""

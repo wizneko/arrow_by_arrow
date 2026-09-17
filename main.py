@@ -46,7 +46,14 @@ WIN_IMAGE_NAME = "result_win"
 FAIL_IMAGE_NAME = "result_fail"
 RESULT_IMAGE_BOX = (300, 240)
 RESULT_FRAME_DELAY_MS = 100
+AI_IMAGE_BOX = (190, 190)
+AI_SUCCESS_HOLD_MS = 2800
 SAVE_FILE_NAME = "savegame.json"
+AI_IMAGE_NAMES = {
+    "idle": "ai_idle.gif",
+    "solving": "ai_solving.gif",
+    "success": "ai_success.gif",
+}
 SOUND_NAMES = {
     "fly": "arrow_fly.wav",
     "collision": "arrow_collision.wav",
@@ -467,8 +474,13 @@ class ArrowEscapeGame:
         self.ai_status = tk.StringVar(value="等待开始")
         self.ai_solving = False
         self.ai_after_id = None
-        self.ai_button = None
         self.ai_step = 0
+        self.ai_state = "idle"
+        self.ai_frames = []
+        self.ai_frame_delays = []
+        self.ai_frame_index = 0
+        self.ai_frame_job = None
+        self.ai_image_label = None
         self.container = tk.Frame(root, bg=WINDOW_BG)
         self.container.pack(fill="both", expand=True)
         self.show_start_screen()
@@ -481,6 +493,20 @@ class ArrowEscapeGame:
     def close_game(self):
         if self.current_view == "game":
             self.save_progress()
+        if self.timer_id is not None:
+            try:
+                self.root.after_cancel(self.timer_id)
+            except tk.TclError:
+                pass
+            self.timer_id = None
+        if self.ai_after_id is not None:
+            try:
+                self.root.after_cancel(self.ai_after_id)
+            except tk.TclError:
+                pass
+            self.ai_after_id = None
+        self.stop_ai_frame_playback()
+        self.stop_result_frame_playback()
         self.root.destroy()
 
     def save_progress(self, next_level=None):
@@ -542,7 +568,8 @@ class ArrowEscapeGame:
             self.root.after_cancel(self.ai_after_id)
             self.ai_after_id = None
         self.ai_solving = False
-        self.ai_button = None
+        self.stop_ai_frame_playback()
+        self.ai_image_label = None
         self.stop_result_frame_playback()
         for widget in self.container.winfo_children():
             widget.destroy()
@@ -588,7 +615,7 @@ class ArrowEscapeGame:
 
     def refresh_layout(self):
         self.resize_after_id = None
-        if self.animating:
+        if self.animating or self.ai_solving:
             self.schedule_resize()
             return
         if self.current_view == "start":
@@ -822,6 +849,8 @@ class ArrowEscapeGame:
         self.animating = False
         self.hover_index = None
         self.arrow_items = {}
+        self.ai_status.set("需要一键求解的话就点我哦")
+        self.ai_state = "idle"
         base_cell_size = min(66, max(52, (WINDOW_HEIGHT - 310) // max(level["rows"], level["cols"])))
         self.cell_size = self.px(base_cell_size)
 
@@ -856,20 +885,21 @@ class ArrowEscapeGame:
         ai_panel = tk.Frame(game_area, bg=PANEL_LIGHT, width=self.px(214), highlightthickness=1, highlightbackground=BORDER)
         ai_panel.pack(side="right", fill="y", padx=(self.px(18), 0))
         ai_panel.pack_propagate(False)
-        tk.Label(ai_panel, text="AI 助手", bg=PANEL_LIGHT, fg=TEXT, font=self.ui_font(14, bold=True)).pack(anchor="w", padx=self.px(18), pady=(self.px(22), self.px(8)))
+        speech = tk.Frame(ai_panel, bg=PANEL_BG, highlightthickness=1, highlightbackground=BORDER)
+        speech.pack(fill="x", padx=self.px(12), pady=(self.px(18), self.px(8)))
         tk.Label(
-            ai_panel,
-            text="AI 会寻找当前可行的箭头，逐步完成本关。",
-            wraplength=self.px(178),
-            justify="left",
-            bg=PANEL_LIGHT,
-            fg=TEXT_MUTED,
-            font=self.ui_font(10),
-        ).pack(anchor="w", padx=self.px(18), pady=(0, self.px(18)))
-        self.ai_button = self.make_button(ai_panel, "AI 一键逐步求解", self.toggle_ai_solver, width=12)
-        self.ai_button.pack(padx=self.px(12), pady=(0, self.px(18)))
-        tk.Label(ai_panel, textvariable=self.ai_status, bg=PANEL_LIGHT, fg=ACCENT, font=self.ui_font(10, bold=True), wraplength=self.px(178), justify="left").pack(anchor="w", padx=self.px(18))
-        tk.Label(ai_panel, text="AI 操作不会消耗误点次数。", bg=PANEL_LIGHT, fg=HELPER, font=self.ui_font(9), wraplength=self.px(178), justify="left").pack(anchor="w", padx=self.px(18), pady=(self.px(18), 0))
+            speech,
+            textvariable=self.ai_status,
+            wraplength=self.px(176),
+            justify="center",
+            bg=PANEL_BG,
+            fg=TEXT,
+            font=self.ui_font(10, bold=True),
+        ).pack(fill="x", padx=self.px(10), pady=self.px(12))
+        self.ai_image_label = tk.Label(ai_panel, bg=PANEL_LIGHT, cursor="hand2", bd=0)
+        self.ai_image_label.pack(padx=self.px(12), pady=(self.px(2), 0))
+        self.ai_image_label.bind("<Button-1>", lambda _event: self.toggle_ai_solver())
+        self.set_ai_state("idle")
         tk.Label(self.container, textvariable=self.message, bg=WINDOW_BG, fg=TEXT_MUTED, font=self.ui_font(11)).pack(pady=(0, self.px(6)))
         tk.Label(self.container, text="沿箭头方向前方没有阻挡时，点击它即可离开", bg=WINDOW_BG, fg=HELPER, font=self.ui_font(9)).pack()
         self.draw_board()
@@ -1117,18 +1147,42 @@ class ArrowEscapeGame:
             self.level_scores[self.level_index] = score
             if self.level_index == len(LEVELS) - 1:
                 self.clear_saved_progress()
-                self.show_result(True)
             else:
                 self.max_unlocked_level = max(self.max_unlocked_level, self.level_index + 1)
                 self.save_progress(next_level=self.level_index + 1)
-                self.show_level_clear()
+            if self.ai_solving:
+                self.show_ai_success()
+            else:
+                self.finish_level_transition()
         else:
             if self.ai_solving:
                 self.ai_step += 1
-                self.ai_status.set(f"正在求解：已完成 {self.ai_step} 步")
+                self.update_status(f"AI 正在逐步求解，已完成 {self.ai_step} 步。")
                 self.ai_after_id = self.root.after(160, self.ai_solve_step)
             else:
                 self.update_status("不错，棋盘正在逐步打开。")
+
+    def show_ai_success(self):
+        self.ai_solving = False
+        self.animating = True
+        self.ai_status.set("成功了，不愧是我~")
+        self.set_ai_state("success")
+        self.update_status("AI 已完成本关，即将进入结算。")
+        session_id = self.session_id
+        self.ai_after_id = self.root.after(
+            AI_SUCCESS_HOLD_MS,
+            lambda sid=session_id: self.finish_level_transition(sid),
+        )
+
+    def finish_level_transition(self, session_id=None):
+        self.ai_after_id = None
+        if session_id is not None and session_id != self.session_id:
+            return
+        self.animating = False
+        if self.level_index == len(LEVELS) - 1:
+            self.show_result(True)
+        else:
+            self.show_level_clear()
 
     def show_level_clear(self):
         if self.current_view != "level_clear":
@@ -1207,6 +1261,70 @@ class ArrowEscapeGame:
             )
             for frame in frames
         ]
+
+    def load_ai_frames(self, state):
+        path = os.path.join(ASSET_DIR, AI_IMAGE_NAMES[state])
+        try:
+            with Image.open(path) as source:
+                frames = []
+                delays = []
+                for index in range(getattr(source, "n_frames", 1)):
+                    source.seek(index)
+                    frames.append(source.convert("RGBA").copy())
+                    delays.append(max(40, int(source.info.get("duration", 100) or 100)))
+                self.ai_frame_delays = delays
+                return frames
+        except (OSError, ValueError):
+            self.ai_frame_delays = []
+            return []
+
+    def fit_ai_frames(self, frames):
+        if not frames:
+            return []
+        box_w, box_h = (self.px(value) for value in AI_IMAGE_BOX)
+        width, height = frames[0].size
+        scale = min(box_w / width, box_h / height)
+        target_size = (max(1, round(width * scale)), max(1, round(height * scale)))
+        return [
+            ImageTk.PhotoImage(frame.resize(target_size, Image.Resampling.LANCZOS), master=self.root)
+            for frame in frames
+        ]
+
+    def set_ai_state(self, state):
+        self.ai_state = state
+        self.stop_ai_frame_playback()
+        if self.ai_image_label is None:
+            return
+        self.ai_frames = self.fit_ai_frames(self.load_ai_frames(state))
+        if self.ai_frames:
+            self.ai_image_label.configure(image=self.ai_frames[0])
+            self.start_ai_frame_playback()
+
+    def start_ai_frame_playback(self):
+        if len(self.ai_frames) < 2 or self.ai_image_label is None:
+            return
+        self.ai_frame_index = 0
+        self.advance_ai_frame()
+
+    def advance_ai_frame(self):
+        if self.ai_image_label is None or not self.ai_frames:
+            return
+        frame_index = self.ai_frame_index % len(self.ai_frames)
+        self.ai_image_label.configure(image=self.ai_frames[frame_index])
+        self.ai_frame_index += 1
+        delay = self.ai_frame_delays[frame_index] if frame_index < len(self.ai_frame_delays) else 100
+        self.ai_frame_job = self.root.after(delay, self.advance_ai_frame)
+
+    def stop_ai_frame_playback(self):
+        if self.ai_frame_job is not None:
+            try:
+                self.root.after_cancel(self.ai_frame_job)
+            except tk.TclError:
+                pass
+            self.ai_frame_job = None
+        self.ai_frames = []
+        self.ai_frame_index = 0
+        self.ai_frame_delays = []
 
     def start_result_frame_playback(self):
         if len(self.result_frames) < 2 or self.result_image_label is None:
@@ -1288,14 +1406,12 @@ class ArrowEscapeGame:
                 self.root.after_cancel(self.ai_after_id)
                 self.ai_after_id = None
             self.ai_status.set("已暂停，可以继续手动操作")
-            if self.ai_button is not None:
-                self.ai_button.configure(text="AI 一键逐步求解")
+            self.set_ai_state("idle")
             return
         self.ai_solving = True
         self.ai_step = 0
         self.ai_status.set("正在分析当前棋盘...")
-        if self.ai_button is not None:
-            self.ai_button.configure(text="暂停 AI 求解")
+        self.set_ai_state("solving")
         self.ai_solve_step()
 
     def ai_solve_step(self):
@@ -1313,8 +1429,7 @@ class ArrowEscapeGame:
         if index is None:
             self.ai_solving = False
             self.ai_status.set("当前布局没有可行步骤")
-            if self.ai_button is not None:
-                self.ai_button.configure(text="AI 一键逐步求解")
+            self.set_ai_state("idle")
             return
         circle, symbol = self.arrow_items[index]
         self.canvas.itemconfig(circle, fill="#c7ffe9", outline=ACCENT, width=4)

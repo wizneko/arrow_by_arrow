@@ -12,7 +12,7 @@ Arrow Escape（箭路突围）
 
 主界面提供继续游戏和选择关卡功能。游戏过程中可以手动保存进度，关闭窗口时也会自动保存。计时器使用独立的单调时钟计算，不会因为箭头飞行动画或阻挡反馈而暂停。
 
-项目整体采用暖色马卡龙风格，使用中文界面。箭头被阻挡时会显示路径、碰撞位置和抖动反馈；箭头成功移出棋盘时会播放飞出动画，并配有飞出和碰撞音效。通关和失败页面会播放对应的 GIF 动画，并配有相应提示音。游戏界面右侧提供 AI 助手，可以逐步寻找当前可行箭头并自动完成关卡。
+项目整体采用暖色马卡龙风格，使用中文界面。箭头被阻挡时会显示路径、碰撞位置和抖动反馈；箭头成功移出棋盘时会播放飞出动画，并配有飞出和碰撞音效。通关和失败页面会播放对应的 GIF 动画，并配有相应提示音。游戏界面右侧提供可点击的 AI 角色：初始状态会显示提示语，点击角色后进入求解状态，完成后显示成功动画，再进入结算页面。
 
 最大化窗口或按 `F11` 进入全屏后，主界面、关卡选择、游戏棋盘和结算页面会按屏幕可用空间等比例放大并保持居中；退出全屏后恢复原来的窗口布局。
 
@@ -82,7 +82,7 @@ python -m PyInstaller --noconfirm --clean --onefile --windowed --name ArrowEscap
 
 ![游戏进行界面](screenshots/gameplay.png)
 
-项目中的 `assets` 文件夹保存了通关和失败时使用的 GIF 动画及四种游戏音效，`dist/ArrowEscape.exe` 是可以直接启动的 Windows 版本，`main.py` 是游戏源代码。
+项目中的 `assets` 文件夹保存了通关、失败和 AI 角色使用的 GIF 动画及四种游戏音效，`dist/ArrowEscape.exe` 是可以直接启动的 Windows 版本，`main.py` 是游戏源代码。
 
 保存文件为程序目录下的 `savegame.json`，由游戏自动生成，不需要手动编辑。
 
@@ -94,6 +94,9 @@ arrow_escape_game/
 ├── assets/
 │   ├── result_win.gif
 │   ├── result_fail.gif
+│   ├── ai_idle.gif
+│   ├── ai_solving.gif
+│   ├── ai_success.gif
 │   ├── arrow_fly.wav
 │   ├── arrow_collision.wav
 │   ├── level_win.wav

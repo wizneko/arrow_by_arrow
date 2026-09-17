@@ -1,6 +1,9 @@
 import unittest
+import os
 
 from main import (
+    AI_IMAGE_NAMES,
+    ASSET_DIR,
     Arrow,
     DIRECTIONS,
     LEVELS,
@@ -12,6 +15,10 @@ from main import (
 
 
 class ArrowGameLogicTests(unittest.TestCase):
+    def test_ai_character_assets_exist(self):
+        for filename in AI_IMAGE_NAMES.values():
+            self.assertTrue(os.path.exists(os.path.join(ASSET_DIR, filename)), filename)
+
     def test_edge_arrow_can_leave_board(self):
         arrows = [Arrow(0, 0, "U")]
         self.assertIsNone(find_blocker_in_state(arrows, 1, 1, 0))
