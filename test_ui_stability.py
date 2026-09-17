@@ -7,7 +7,7 @@ try:
 except ImportError:  # pragma: no cover
     tk = None
 
-from main import WINDOW_HEIGHT, ArrowEscapeGame
+from main import WINDOW_HEIGHT, WINDOW_WIDTH, ArrowEscapeGame
 
 
 IDLE_HOLD_MS = 1200
@@ -127,6 +127,29 @@ class UiStabilityTests(unittest.TestCase):
             1,
             "窗口尺寸真实变化后界面应重排一次，缩放响应不能被一并禁用",
         )
+
+    def test_normal_window_keeps_original_layout_scale(self):
+        game = ArrowEscapeGame(self.root)
+        self.root.geometry("1400x1000")
+        self.root.update_idletasks()
+        self.root.update()
+        game.prepare_surface()
+        self.assertEqual(game.ui_scale, 1.0)
+        self._teardown_game(game)
+
+    def test_fullscreen_layout_scales_and_stays_centered(self):
+        game = ArrowEscapeGame(self.root)
+        self.root.geometry("1600x1000")
+        self.root.update_idletasks()
+        self.root.update()
+        game.fullscreen = True
+        game.prepare_surface()
+        expected = min(1600 / WINDOW_WIDTH, 1000 / WINDOW_HEIGHT)
+        self.assertAlmostEqual(game.ui_scale, expected, places=2)
+        self.assertEqual(game.container.winfo_manager(), "place")
+        self.assertEqual(game.container.place_info()["relx"], "0.5")
+        self.assertEqual(game.container.place_info()["rely"], "0.5")
+        self._teardown_game(game)
 
 
 if __name__ == "__main__":

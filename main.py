@@ -606,7 +606,12 @@ class ArrowEscapeGame:
         self.root.update_idletasks()
         width = max(WINDOW_WIDTH, self.root.winfo_width())
         height = max(WINDOW_HEIGHT, self.root.winfo_height())
-        self.ui_scale = min(width / WINDOW_WIDTH, height / WINDOW_HEIGHT)
+        try:
+            maximized = self.root.state() == "zoomed"
+        except tk.TclError:
+            maximized = False
+        expanded = self.fullscreen or maximized
+        self.ui_scale = min(width / WINDOW_WIDTH, height / WINDOW_HEIGHT) if expanded else 1.0
         surface_width = round(WINDOW_WIDTH * self.ui_scale)
         surface_height = round(WINDOW_HEIGHT * self.ui_scale)
         self.container.pack_forget()
@@ -620,8 +625,8 @@ class ArrowEscapeGame:
 
     def make_button(self, parent, text, command, color=ACCENT_DARK, width=12):
         foreground = "#fffaf5" if color in (ACCENT_DARK, ACCENT, BUTTON_HOVER) else INK
-        button_width = max(132, round(width * 11 + 42))
-        button_height = 52
+        button_width = self.px(max(132, round(width * 11 + 42)))
+        button_height = self.px(52)
         return RoundedButton(
             parent,
             text,
@@ -635,64 +640,67 @@ class ArrowEscapeGame:
         )
 
     def draw_background(self, canvas):
-        canvas.configure(width=WINDOW_WIDTH, height=WINDOW_HEIGHT, bg=WINDOW_BG)
-        for x in range(0, WINDOW_WIDTH, 44):
-            canvas.create_line(x, 0, x, WINDOW_HEIGHT, fill="#f8eadf")
-        for y in range(0, WINDOW_HEIGHT, 44):
-            canvas.create_line(0, y, WINDOW_WIDTH, y, fill="#f8eadf")
+        width = self.px(WINDOW_WIDTH)
+        height = self.px(WINDOW_HEIGHT)
+        canvas.configure(width=width, height=height, bg=WINDOW_BG)
+        for x in range(0, width, self.px(44)):
+            canvas.create_line(x, 0, x, height, fill="#f8eadf")
+        for y in range(0, height, self.px(44)):
+            canvas.create_line(0, y, width, y, fill="#f8eadf")
         for x, y, color in [(72, 72, "#f4b6c5"), (925, 92, "#a9d8bd"), (90, 820, "#f6d58e"), (910, 820, "#a9d6e6")]:
-            canvas.create_oval(x - 4, y - 4, x + 4, y + 4, fill=color, outline="")
+            canvas.create_oval(self.px(x - 4), self.px(y - 4), self.px(x + 4), self.px(y + 4), fill=color, outline="")
 
     def show_start_screen(self):
         self.current_view = "start"
         self.session_id += 1
         self.animating = False
         self.clear()
+        self.prepare_surface()
         canvas = tk.Canvas(self.container, highlightthickness=0)
         canvas.pack()
         self.draw_background(canvas)
 
-        canvas.create_text(78, 94, text="箭路突围", anchor="w", fill=ACCENT, font=("Microsoft YaHei UI", 18, "bold"))
-        canvas.create_text(78, 154, text="每一步，都要看清方向", anchor="w", fill=TEXT, font=("Microsoft YaHei UI", 30, "bold"))
-        canvas.create_text(78, 204, text="点击箭头，让它沿着自己的方向离开棋盘", anchor="w", fill=TEXT_MUTED, font=("Microsoft YaHei UI", 14))
+        canvas.create_text(self.px(78), self.px(94), text="箭路突围", anchor="w", fill=ACCENT, font=self.ui_font(18, bold=True))
+        canvas.create_text(self.px(78), self.px(154), text="每一步，都要看清方向", anchor="w", fill=TEXT, font=self.ui_font(30, bold=True))
+        canvas.create_text(self.px(78), self.px(204), text="点击箭头，让它沿着自己的方向离开棋盘", anchor="w", fill=TEXT_MUTED, font=self.ui_font(14))
 
         left = tk.Frame(canvas, bg=PANEL_BG, highlightthickness=1, highlightbackground=BORDER)
-        left.place(x=78, y=270, width=400, height=500)
-        tk.Label(left, text="游戏目标", bg=PANEL_BG, fg=GOLD, font=("Microsoft YaHei UI", 12, "bold")).pack(anchor="w", padx=28, pady=(24, 8))
-        tk.Label(left, text="清空棋盘上的所有箭头", wraplength=340, justify="left", bg=PANEL_BG, fg=TEXT, font=("Microsoft YaHei UI", 16, "bold")).pack(anchor="w", padx=28)
-        tk.Label(left, text="如果箭头前方有其他箭头，它会被阻挡。\n每次误点都会消耗一次机会。", wraplength=330, justify="left", bg=PANEL_BG, fg=TEXT_MUTED, font=("Microsoft YaHei UI", 11), pady=14).pack(anchor="w", padx=28)
-        tk.Label(left, text="5 个关卡  ·  棋盘逐步变大  ·  每关独立计时", bg=PANEL_BG, fg=TEXT_MUTED, font=("Microsoft YaHei UI", 9)).pack(anchor="w", padx=28, pady=(6, 0))
+        left.place(x=self.px(78), y=self.px(270), width=self.px(400), height=self.px(500))
+        tk.Label(left, text="游戏目标", bg=PANEL_BG, fg=GOLD, font=self.ui_font(12, bold=True)).pack(anchor="w", padx=self.px(28), pady=(self.px(24), self.px(8)))
+        tk.Label(left, text="清空棋盘上的所有箭头", wraplength=self.px(340), justify="left", bg=PANEL_BG, fg=TEXT, font=self.ui_font(16, bold=True)).pack(anchor="w", padx=self.px(28))
+        tk.Label(left, text="如果箭头前方有其他箭头，它会被阻挡。\n每次误点都会消耗一次机会。", wraplength=self.px(330), justify="left", bg=PANEL_BG, fg=TEXT_MUTED, font=self.ui_font(11), pady=self.px(14)).pack(anchor="w", padx=self.px(28))
+        tk.Label(left, text="5 个关卡  ·  棋盘逐步变大  ·  每关独立计时", bg=PANEL_BG, fg=TEXT_MUTED, font=self.ui_font(9)).pack(anchor="w", padx=self.px(28), pady=(self.px(6), 0))
         actions = tk.Frame(left, bg=PANEL_BG)
-        actions.pack(fill="x", padx=28, pady=(16, 16))
-        self.make_button(actions, "开始游戏", lambda: self.load_level(0), width=18).pack(pady=(0, 10))
-        self.make_button(actions, "继续游戏", self.continue_saved_game, color=SECONDARY, width=18).pack(pady=(0, 10))
+        actions.pack(fill="x", padx=self.px(28), pady=(self.px(16), self.px(16)))
+        self.make_button(actions, "开始游戏", lambda: self.load_level(0), width=18).pack(pady=(0, self.px(10)))
+        self.make_button(actions, "继续游戏", self.continue_saved_game, color=SECONDARY, width=18).pack(pady=(0, self.px(10)))
         self.make_button(actions, "选择关卡", self.show_level_select, color=SECONDARY, width=18).pack()
 
         preview = tk.Frame(canvas, bg=PANEL_LIGHT, highlightthickness=1, highlightbackground=BORDER)
-        preview.place(x=540, y=270, width=380, height=500)
-        tk.Label(preview, text="方向预览", bg=PANEL_LIGHT, fg=TEXT, font=("Microsoft YaHei UI", 14, "bold")).pack(anchor="w", padx=24, pady=(22, 8))
-        demo = tk.Canvas(preview, width=330, height=235, bg=BOARD_BG, highlightthickness=1, highlightbackground=BORDER)
-        demo.pack(padx=24, pady=5)
+        preview.place(x=self.px(540), y=self.px(270), width=self.px(380), height=self.px(500))
+        tk.Label(preview, text="方向预览", bg=PANEL_LIGHT, fg=TEXT, font=self.ui_font(14, bold=True)).pack(anchor="w", padx=self.px(24), pady=(self.px(22), self.px(8)))
+        demo = tk.Canvas(preview, width=self.px(330), height=self.px(235), bg=BOARD_BG, highlightthickness=1, highlightbackground=BORDER)
+        demo.pack(padx=self.px(24), pady=self.px(5))
         self.draw_demo(demo)
         tk.Label(
             preview,
             text="箭头会沿自身方向离开棋盘，先观察前方是否有阻挡。",
-            wraplength=320,
+            wraplength=self.px(320),
             justify="left",
             bg=PANEL_LIGHT,
             fg=TEXT_MUTED,
-            font=("Microsoft YaHei UI", 10),
-        ).pack(anchor="w", padx=24, pady=(12, 8))
+            font=self.ui_font(10),
+        ).pack(anchor="w", padx=self.px(24), pady=(self.px(12), self.px(8)))
         direction_guide = tk.Frame(preview, bg=PANEL_LIGHT)
-        direction_guide.pack(fill="x", padx=24, pady=(0, 10))
+        direction_guide.pack(fill="x", padx=self.px(24), pady=(0, self.px(10)))
         for column, (symbol, name, direction) in enumerate((("↑", "向上", "U"), ("↓", "向下", "D"), ("←", "向左", "L"), ("→", "向右", "R"))):
             cell = tk.Frame(direction_guide, bg=ARROW_COLORS[direction], highlightthickness=1, highlightbackground="#ffffff")
-            cell.grid(row=0, column=column, padx=(0 if column == 0 else 5, 0), sticky="nsew")
+            cell.grid(row=0, column=column, padx=(0 if column == 0 else self.px(5), 0), sticky="nsew")
             direction_guide.grid_columnconfigure(column, weight=1)
-            tk.Label(cell, text=symbol, bg=ARROW_COLORS[direction], fg=INK, font=("Microsoft YaHei UI", 16, "bold")).pack(pady=(0, 0))
-            tk.Label(cell, text=name, bg=ARROW_COLORS[direction], fg=INK, font=("Microsoft YaHei UI", 8, "bold")).pack(pady=(0, 2))
+            tk.Label(cell, text=symbol, bg=ARROW_COLORS[direction], fg=INK, font=self.ui_font(16, bold=True)).pack(pady=0)
+            tk.Label(cell, text=name, bg=ARROW_COLORS[direction], fg=INK, font=self.ui_font(8, bold=True)).pack(pady=(0, self.px(2)))
 
-        canvas.create_text(78, 812, text="快捷键：R 重开本关    H 查看提示    Esc 返回主菜单", anchor="w", fill=HELPER, font=("Microsoft YaHei UI", 10))
+        canvas.create_text(self.px(78), self.px(812), text="快捷键：R 重开本关    H 查看提示    Esc 返回主菜单", anchor="w", fill=HELPER, font=self.ui_font(10))
 
     def continue_saved_game(self):
         saved = self.read_saved_progress()
@@ -729,13 +737,14 @@ class ArrowEscapeGame:
         self.session_id += 1
         self.animating = False
         self.clear()
+        self.prepare_surface()
         canvas = tk.Canvas(self.container, highlightthickness=0)
         canvas.pack()
         self.draw_background(canvas)
         panel = tk.Frame(canvas, bg=PANEL_BG, highlightthickness=1, highlightbackground=BORDER)
-        panel.place(x=220, y=85, width=560, height=730)
-        tk.Label(panel, text="选择关卡", bg=PANEL_BG, fg=ACCENT, font=("Microsoft YaHei UI", 25, "bold")).pack(pady=(34, 8))
-        tk.Label(panel, text="已解锁的关卡可以重复挑战", bg=PANEL_BG, fg=TEXT_MUTED, font=("Microsoft YaHei UI", 11)).pack(pady=(0, 22))
+        panel.place(x=self.px(220), y=self.px(85), width=self.px(560), height=self.px(730))
+        tk.Label(panel, text="选择关卡", bg=PANEL_BG, fg=ACCENT, font=self.ui_font(25, bold=True)).pack(pady=(self.px(34), self.px(8)))
+        tk.Label(panel, text="已解锁的关卡可以重复挑战", bg=PANEL_BG, fg=TEXT_MUTED, font=self.ui_font(11)).pack(pady=(0, self.px(22)))
         unlocked = self.unlocked_level_count()
         for index, level in enumerate(LEVELS):
             if index < unlocked:
@@ -745,20 +754,20 @@ class ArrowEscapeGame:
             else:
                 button = self.make_button(panel, f"第 {index + 1} 关  ·  尚未解锁", lambda: None, color="#f1e4dc", width=24)
                 button.configure(state="disabled", disabledforeground=TEXT_MUTED)
-            button.pack(pady=6)
-        self.make_button(panel, "返回主界面", self.show_start_screen, color=SECONDARY, width=18).pack(pady=(22, 0))
+            button.pack(pady=self.px(6))
+        self.make_button(panel, "返回主界面", self.show_start_screen, color=SECONDARY, width=18).pack(pady=(self.px(22), 0))
 
     def draw_demo(self, canvas):
-        cell = 52
+        cell = self.px(52)
         for r in range(4):
             for c in range(5):
-                x, y = 18 + c * cell, 18 + r * cell
-                canvas.create_rectangle(x, y, x + cell - 2, y + cell - 2, fill=BOARD_BG, outline=GRID_LINE)
-                canvas.create_oval(x + 23, y + 23, x + 27, y + 27, fill=GRID_DOT, outline="")
+                x, y = self.px(18) + c * cell, self.px(18) + r * cell
+                canvas.create_rectangle(x, y, x + cell - self.px(2), y + cell - self.px(2), fill=BOARD_BG, outline=GRID_LINE)
+                canvas.create_oval(x + self.px(23), y + self.px(23), x + self.px(27), y + self.px(27), fill=GRID_DOT, outline="")
         for r, c, direction in [(0, 1, "R"), (1, 3, "D"), (2, 2, "U"), (3, 4, "L")]:
-            x, y = 18 + c * cell + 25, 18 + r * cell + 25
-            canvas.create_oval(x - 18, y - 18, x + 18, y + 18, fill=ARROW_COLORS[direction], outline="#ffffff", width=2)
-            canvas.create_polygon(self.arrow_points(x, y, direction, 0.7), fill=INK, outline=INK)
+            x, y = self.px(18) + c * cell + self.px(25), self.px(18) + r * cell + self.px(25)
+            canvas.create_oval(x - self.px(18), y - self.px(18), x + self.px(18), y + self.px(18), fill=ARROW_COLORS[direction], outline="#ffffff", width=self.px(2))
+            canvas.create_polygon(self.arrow_points(x, y, direction, 0.7 * self.ui_scale), fill=INK, outline=INK)
 
     def load_level(self, index, preserve_state=False, saved_state=None):
         if not 0 <= index < len(LEVELS):
@@ -779,6 +788,7 @@ class ArrowEscapeGame:
         self.session_id += 1
         self.clear()
         self.current_view = "game"
+        self.prepare_surface()
         self.level_index = index
         level = LEVELS[index]
         self.arrows = [Arrow(a.row, a.col, a.direction) for a in level["arrows"]]
@@ -812,18 +822,19 @@ class ArrowEscapeGame:
         self.animating = False
         self.hover_index = None
         self.arrow_items = {}
-        self.cell_size = min(66, max(52, (WINDOW_HEIGHT - 310) // max(level["rows"], level["cols"])))
+        base_cell_size = min(66, max(52, (WINDOW_HEIGHT - 310) // max(level["rows"], level["cols"])))
+        self.cell_size = self.px(base_cell_size)
 
-        header = tk.Frame(self.container, bg=WINDOW_BG, padx=44, pady=14)
+        header = tk.Frame(self.container, bg=WINDOW_BG, padx=self.px(44), pady=self.px(14))
         header.pack(fill="x")
-        tk.Label(header, text="箭路突围", bg=WINDOW_BG, fg=ACCENT, font=("Microsoft YaHei UI", 16, "bold")).pack(side="left")
-        tk.Label(header, text=f"  /  第 {index + 1} 关 · {level['name']}", bg=WINDOW_BG, fg=TEXT_MUTED, font=("Microsoft YaHei UI", 13, "bold")).pack(side="left")
+        tk.Label(header, text="箭路突围", bg=WINDOW_BG, fg=ACCENT, font=self.ui_font(16, bold=True)).pack(side="left")
+        tk.Label(header, text=f"  /  第 {index + 1} 关 · {level['name']}", bg=WINDOW_BG, fg=TEXT_MUTED, font=self.ui_font(13, bold=True)).pack(side="left")
         self.make_button(header, "主菜单", self.return_to_menu, color=SECONDARY, width=8).pack(side="right")
-        self.make_button(header, "保存", self.save_and_notify, color=SECONDARY, width=7).pack(side="right", padx=6)
-        self.make_button(header, "重新开始", self.restart_level, color=SECONDARY, width=9).pack(side="right", padx=6)
+        self.make_button(header, "保存", self.save_and_notify, color=SECONDARY, width=7).pack(side="right", padx=self.px(6))
+        self.make_button(header, "重新开始", self.restart_level, color=SECONDARY, width=9).pack(side="right", padx=self.px(6))
         self.make_button(header, "提示", self.show_hint, color=SECONDARY, width=7).pack(side="right")
 
-        stats = tk.Frame(self.container, bg=WINDOW_BG, padx=44)
+        stats = tk.Frame(self.container, bg=WINDOW_BG, padx=self.px(44))
         stats.pack(fill="x")
         self.stat_remaining = self.add_stat(stats, "剩余箭头", "")
         self.stat_lives = self.add_stat(stats, "剩余机会", "")
@@ -831,10 +842,10 @@ class ArrowEscapeGame:
         self.stat_timer = self.add_stat(stats, "本关用时", "")
         self.stat_level = self.add_stat(stats, "关卡进度", "")
 
-        board_w = level["cols"] * self.cell_size + PADDING * 2
-        board_h = level["rows"] * self.cell_size + PADDING * 2
+        board_w = level["cols"] * self.cell_size + self.px(PADDING) * 2
+        board_h = level["rows"] * self.cell_size + self.px(PADDING) * 2
         game_area = tk.Frame(self.container, bg=WINDOW_BG)
-        game_area.pack(fill="both", expand=True, pady=16, padx=44)
+        game_area.pack(fill="both", expand=True, pady=self.px(16), padx=self.px(44))
         board_holder = tk.Frame(game_area, bg=WINDOW_BG)
         board_holder.pack(side="left", fill="both", expand=True)
         self.canvas = tk.Canvas(board_holder, width=board_w, height=board_h, bg=BOARD_BG, highlightthickness=1, highlightbackground=BORDER)
@@ -842,34 +853,34 @@ class ArrowEscapeGame:
         self.canvas.bind("<Button-1>", self.handle_click)
         self.canvas.bind("<Motion>", self.handle_motion)
         self.canvas.bind("<Leave>", lambda _e: self.set_hover(None))
-        ai_panel = tk.Frame(game_area, bg=PANEL_LIGHT, width=214, highlightthickness=1, highlightbackground=BORDER)
-        ai_panel.pack(side="right", fill="y", padx=(18, 0))
+        ai_panel = tk.Frame(game_area, bg=PANEL_LIGHT, width=self.px(214), highlightthickness=1, highlightbackground=BORDER)
+        ai_panel.pack(side="right", fill="y", padx=(self.px(18), 0))
         ai_panel.pack_propagate(False)
-        tk.Label(ai_panel, text="AI 助手", bg=PANEL_LIGHT, fg=TEXT, font=("Microsoft YaHei UI", 14, "bold")).pack(anchor="w", padx=18, pady=(22, 8))
+        tk.Label(ai_panel, text="AI 助手", bg=PANEL_LIGHT, fg=TEXT, font=self.ui_font(14, bold=True)).pack(anchor="w", padx=self.px(18), pady=(self.px(22), self.px(8)))
         tk.Label(
             ai_panel,
             text="AI 会寻找当前可行的箭头，逐步完成本关。",
-            wraplength=178,
+            wraplength=self.px(178),
             justify="left",
             bg=PANEL_LIGHT,
             fg=TEXT_MUTED,
-            font=("Microsoft YaHei UI", 10),
-        ).pack(anchor="w", padx=18, pady=(0, 18))
+            font=self.ui_font(10),
+        ).pack(anchor="w", padx=self.px(18), pady=(0, self.px(18)))
         self.ai_button = self.make_button(ai_panel, "AI 一键逐步求解", self.toggle_ai_solver, width=12)
-        self.ai_button.pack(padx=12, pady=(0, 18))
-        tk.Label(ai_panel, textvariable=self.ai_status, bg=PANEL_LIGHT, fg=ACCENT, font=("Microsoft YaHei UI", 10, "bold"), wraplength=178, justify="left").pack(anchor="w", padx=18)
-        tk.Label(ai_panel, text="AI 操作不会消耗误点次数。", bg=PANEL_LIGHT, fg=HELPER, font=("Microsoft YaHei UI", 9), wraplength=178, justify="left").pack(anchor="w", padx=18, pady=(18, 0))
-        tk.Label(self.container, textvariable=self.message, bg=WINDOW_BG, fg=TEXT_MUTED, font=("Microsoft YaHei UI", 11)).pack(pady=(0, 6))
-        tk.Label(self.container, text="沿箭头方向前方没有阻挡时，点击它即可离开", bg=WINDOW_BG, fg=HELPER, font=("Microsoft YaHei UI", 9)).pack()
+        self.ai_button.pack(padx=self.px(12), pady=(0, self.px(18)))
+        tk.Label(ai_panel, textvariable=self.ai_status, bg=PANEL_LIGHT, fg=ACCENT, font=self.ui_font(10, bold=True), wraplength=self.px(178), justify="left").pack(anchor="w", padx=self.px(18))
+        tk.Label(ai_panel, text="AI 操作不会消耗误点次数。", bg=PANEL_LIGHT, fg=HELPER, font=self.ui_font(9), wraplength=self.px(178), justify="left").pack(anchor="w", padx=self.px(18), pady=(self.px(18), 0))
+        tk.Label(self.container, textvariable=self.message, bg=WINDOW_BG, fg=TEXT_MUTED, font=self.ui_font(11)).pack(pady=(0, self.px(6)))
+        tk.Label(self.container, text="沿箭头方向前方没有阻挡时，点击它即可离开", bg=WINDOW_BG, fg=HELPER, font=self.ui_font(9)).pack()
         self.draw_board()
         self.update_status("寻找一条没有阻挡的路线。")
         self.tick_timer()
 
     def add_stat(self, parent, title, value):
-        box = tk.Frame(parent, bg=PANEL_BG, padx=12, pady=8, highlightthickness=1, highlightbackground=BORDER)
-        box.pack(side="left", fill="x", expand=True, padx=(0, 8))
-        tk.Label(box, text=title, bg=PANEL_BG, fg=TEXT_MUTED, font=("Microsoft YaHei UI", 9, "bold")).pack(anchor="w")
-        label = tk.Label(box, text=value, bg=PANEL_BG, fg=TEXT, font=("Microsoft YaHei UI", 14, "bold"))
+        box = tk.Frame(parent, bg=PANEL_BG, padx=self.px(12), pady=self.px(8), highlightthickness=1, highlightbackground=BORDER)
+        box.pack(side="left", fill="x", expand=True, padx=(0, self.px(8)))
+        tk.Label(box, text=title, bg=PANEL_BG, fg=TEXT_MUTED, font=self.ui_font(9, bold=True)).pack(anchor="w")
+        label = tk.Label(box, text=value, bg=PANEL_BG, fg=TEXT, font=self.ui_font(14, bold=True))
         label.pack(anchor="w")
         return label
 
@@ -900,7 +911,8 @@ class ArrowEscapeGame:
             for c in range(level["cols"]):
                 x1, y1 = self.cell_origin(r, c)
                 self.canvas.create_rectangle(x1, y1, x1 + self.cell_size, y1 + self.cell_size, fill=BOARD_BG, outline=GRID_LINE)
-                self.canvas.create_oval(x1 + self.cell_size / 2 - 2, y1 + self.cell_size / 2 - 2, x1 + self.cell_size / 2 + 2, y1 + self.cell_size / 2 + 2, fill=GRID_DOT, outline="")
+                dot = self.px(2)
+                self.canvas.create_oval(x1 + self.cell_size / 2 - dot, y1 + self.cell_size / 2 - dot, x1 + self.cell_size / 2 + dot, y1 + self.cell_size / 2 + dot, fill=GRID_DOT, outline="")
         self.arrow_items.clear()
         for index, arrow in enumerate(self.arrows):
             if arrow.active:
@@ -910,8 +922,9 @@ class ArrowEscapeGame:
         x, y = self.cell_center(arrow.row, arrow.col)
         tag = f"arrow_{index}"
         color = ARROW_COLORS[arrow.direction]
-        circle = self.canvas.create_oval(x - 22, y - 22, x + 22, y + 22, fill=color, outline="#ffffff", width=2, tags=(tag,))
-        symbol = self.canvas.create_polygon(self.arrow_points(x, y, arrow.direction), fill=INK, outline=INK, tags=(tag,))
+        radius = self.px(22)
+        circle = self.canvas.create_oval(x - radius, y - radius, x + radius, y + radius, fill=color, outline="#ffffff", width=self.px(2), tags=(tag,))
+        symbol = self.canvas.create_polygon(self.arrow_points(x, y, arrow.direction, self.ui_scale), fill=INK, outline=INK, tags=(tag,))
         self.arrow_items[index] = (circle, symbol)
 
     def arrow_points(self, x, y, direction, scale=1.0):
@@ -927,7 +940,8 @@ class ArrowEscapeGame:
         return [coordinate for px, py in transformed for coordinate in (x + px * scale, y + py * scale)]
 
     def cell_origin(self, row, col):
-        return PADDING + col * self.cell_size, PADDING + row * self.cell_size
+        padding = self.px(PADDING)
+        return padding + col * self.cell_size, padding + row * self.cell_size
 
     def cell_center(self, row, col):
         x1, y1 = self.cell_origin(row, col)
@@ -954,7 +968,7 @@ class ArrowEscapeGame:
         for item_index in [old, index]:
             if item_index is not None and item_index in self.arrow_items:
                 circle, _symbol = self.arrow_items[item_index]
-                self.canvas.itemconfig(circle, outline=TEXT if item_index == index else "#ffffff", width=4 if item_index == index else 2)
+                self.canvas.itemconfig(circle, outline=TEXT if item_index == index else "#ffffff", width=self.px(4 if item_index == index else 2))
         self.canvas.configure(cursor="hand2" if index is not None else "")
 
     def handle_click(self, event):
@@ -976,7 +990,7 @@ class ArrowEscapeGame:
             if not arrow.active:
                 continue
             cx, cy = self.cell_center(arrow.row, arrow.col)
-            if (x - cx) ** 2 + (y - cy) ** 2 <= 27 ** 2:
+            if (x - cx) ** 2 + (y - cy) ** 2 <= self.px(27) ** 2:
                 return index
         return None
 
@@ -1036,13 +1050,13 @@ class ArrowEscapeGame:
         tag = f"collision_{session_id}"
         self.canvas.create_line(
             clicked_x, clicked_y, blocker_x, blocker_y,
-            fill="#e7ad70", width=4, dash=(8, 5), tags=(tag, "collision_path"),
+            fill="#e7ad70", width=self.px(4), dash=(self.px(8), self.px(5)), tags=(tag, "collision_path"),
         )
         for x, y, color in ((clicked_x, clicked_y, DANGER), (blocker_x, blocker_y, GOLD)):
             radius = self.cell_size * 0.38
             self.canvas.create_oval(
                 x - radius, y - radius, x + radius, y + radius,
-                outline=color, width=3, tags=(tag, "collision_ring"),
+                outline=color, width=self.px(3), tags=(tag, "collision_ring"),
             )
         ray_length = self.cell_size * 0.30
         for dx, dy in ((-1, -1), (1, -1), (-1, 1), (1, 1)):
@@ -1051,7 +1065,7 @@ class ArrowEscapeGame:
                 clicked_y + dy * ray_length * 0.55,
                 clicked_x + dx * ray_length,
                 clicked_y + dy * ray_length,
-                fill=DANGER, width=3, tags=(tag, "collision_ray"),
+                fill=DANGER, width=self.px(3), tags=(tag, "collision_ray"),
             )
         self.canvas.tag_lower(tag)
         for item_index in (index, blocker):
@@ -1123,22 +1137,23 @@ class ArrowEscapeGame:
         self.session_id += 1
         self.animating = False
         self.clear()
+        self.prepare_surface()
         canvas = tk.Canvas(self.container, highlightthickness=0)
         canvas.pack()
         self.draw_background(canvas)
         panel = tk.Frame(canvas, bg=PANEL_BG, highlightthickness=1, highlightbackground=BORDER)
-        panel.place(x=220, y=55, width=560, height=790)
+        panel.place(x=self.px(220), y=self.px(55), width=self.px(560), height=self.px(790))
         score = self.level_scores.get(
             self.level_index,
             calculate_level_score(self.level_index, self.elapsed_seconds, self.blocked_attempts),
         )
-        tk.Label(panel, text="本关完成", bg=PANEL_BG, fg=ACCENT, font=("Microsoft YaHei UI", 17, "bold")).pack(pady=(38, 10))
-        tk.Label(panel, text=f"第 {self.level_index + 1} 关 · {LEVELS[self.level_index]['name']}", bg=PANEL_BG, fg=TEXT, font=("Microsoft YaHei UI", 25, "bold")).pack()
-        tk.Label(panel, text=LEVELS[self.level_index]["subtitle"], bg=PANEL_BG, fg=TEXT_MUTED, font=("Microsoft YaHei UI", 12)).pack(pady=(8, 20))
-        tk.Label(panel, text=f"用时 {self.timer_text.get()}    ·    步数 {self.moves}    ·    误点 {self.blocked_attempts}", bg=PANEL_BG, fg=GOLD, font=("Microsoft YaHei UI", 12, "bold")).pack(pady=(0, 25))
-        tk.Label(panel, text=f"本关评分  {score_grade(score)}  ·  {score} 分", bg=PANEL_BG, fg=ACCENT, font=("Microsoft YaHei UI", 16, "bold")).pack(pady=(0, 8))
+        tk.Label(panel, text="本关完成", bg=PANEL_BG, fg=ACCENT, font=self.ui_font(17, bold=True)).pack(pady=(self.px(38), self.px(10)))
+        tk.Label(panel, text=f"第 {self.level_index + 1} 关 · {LEVELS[self.level_index]['name']}", bg=PANEL_BG, fg=TEXT, font=self.ui_font(25, bold=True)).pack()
+        tk.Label(panel, text=LEVELS[self.level_index]["subtitle"], bg=PANEL_BG, fg=TEXT_MUTED, font=self.ui_font(12)).pack(pady=(self.px(8), self.px(20)))
+        tk.Label(panel, text=f"用时 {self.timer_text.get()}    ·    步数 {self.moves}    ·    误点 {self.blocked_attempts}", bg=PANEL_BG, fg=GOLD, font=self.ui_font(12, bold=True)).pack(pady=(0, self.px(25)))
+        tk.Label(panel, text=f"本关评分  {score_grade(score)}  ·  {score} 分", bg=PANEL_BG, fg=ACCENT, font=self.ui_font(16, bold=True)).pack(pady=(0, self.px(8)))
         image_holder = tk.Frame(panel, bg=PANEL_BG)
-        image_holder.pack(pady=(0, 14))
+        image_holder.pack(pady=(0, self.px(14)))
         self.result_frames = self.fit_result_frames(self.load_result_image(True))
         if self.result_frames:
             self.result_image_label = tk.Label(image_holder, image=self.result_frames[0], bg=PANEL_BG)
@@ -1147,7 +1162,7 @@ class ArrowEscapeGame:
         else:
             self.result_image_label = None
         self.make_button(panel, "进入下一关", lambda: self.load_level(self.level_index + 1), width=18).pack()
-        self.make_button(panel, "返回主界面", self.show_start_screen, color=SECONDARY, width=18).pack(pady=10)
+        self.make_button(panel, "返回主界面", self.show_start_screen, color=SECONDARY, width=18).pack(pady=self.px(10))
 
     def load_result_image(self, passed):
         """Load the celebration / defeat image as frames.
@@ -1181,7 +1196,7 @@ class ArrowEscapeGame:
         """Scale composited frames into RESULT_IMAGE_BOX with high quality."""
         if not frames:
             return frames
-        box_w, box_h = RESULT_IMAGE_BOX
+        box_w, box_h = (self.px(value) for value in RESULT_IMAGE_BOX)
         width, height = frames[0].size
         scale = min(box_w / width, box_h / height)
         target_size = (max(1, round(width * scale)), max(1, round(height * scale)))
@@ -1228,11 +1243,12 @@ class ArrowEscapeGame:
         self.session_id += 1
         self.animating = False
         self.clear()
+        self.prepare_surface()
         canvas = tk.Canvas(self.container, highlightthickness=0)
         canvas.pack()
         self.draw_background(canvas)
         panel = tk.Frame(canvas, bg=PANEL_BG, highlightthickness=1, highlightbackground=BORDER)
-        panel.place(x=220, y=60, width=560, height=780)
+        panel.place(x=self.px(220), y=self.px(60), width=self.px(560), height=self.px(780))
         title = "全部通关" if passed else "挑战结束"
         color = ACCENT if passed else DANGER
         detail = "你已经清空全部棋盘，完成了挑战。" if passed else "机会用尽了，重新规划路线再试一次。"
@@ -1241,15 +1257,15 @@ class ArrowEscapeGame:
             self.level_index,
             calculate_level_score(self.level_index, self.elapsed_seconds, self.blocked_attempts),
         )
-        tk.Label(panel, text=title, bg=PANEL_BG, fg=color, font=("Microsoft YaHei UI", 18, "bold")).pack(pady=(26, 8))
-        tk.Label(panel, text="箭路突围", bg=PANEL_BG, fg=TEXT, font=("Microsoft YaHei UI", 28, "bold")).pack()
-        tk.Label(panel, text=detail, bg=PANEL_BG, fg=TEXT_MUTED, font=("Microsoft YaHei UI", 12)).pack(pady=(10, 16))
-        tk.Label(panel, text=f"总步数 {self.moves}    ·    总误点 {self.blocked_attempts}    ·    最后一关用时 {self.timer_text.get()}", bg=PANEL_BG, fg=GOLD, font=("Microsoft YaHei UI", 11, "bold")).pack(pady=(0, 10))
+        tk.Label(panel, text=title, bg=PANEL_BG, fg=color, font=self.ui_font(18, bold=True)).pack(pady=(self.px(26), self.px(8)))
+        tk.Label(panel, text="箭路突围", bg=PANEL_BG, fg=TEXT, font=self.ui_font(28, bold=True)).pack()
+        tk.Label(panel, text=detail, bg=PANEL_BG, fg=TEXT_MUTED, font=self.ui_font(12)).pack(pady=(self.px(10), self.px(16)))
+        tk.Label(panel, text=f"总步数 {self.moves}    ·    总误点 {self.blocked_attempts}    ·    最后一关用时 {self.timer_text.get()}", bg=PANEL_BG, fg=GOLD, font=self.ui_font(11, bold=True)).pack(pady=(0, self.px(10)))
         if passed:
-            tk.Label(panel, text=f"本关评分  {score_grade(final_score)}  ·  {final_score} 分", bg=PANEL_BG, fg=ACCENT, font=("Microsoft YaHei UI", 14, "bold")).pack(pady=(0, 6))
-            tk.Label(panel, text=f"总评分  {total_score} / {len(LEVELS) * 1000}", bg=PANEL_BG, fg=ACCENT, font=("Microsoft YaHei UI", 14, "bold")).pack(pady=(0, 10))
+            tk.Label(panel, text=f"本关评分  {score_grade(final_score)}  ·  {final_score} 分", bg=PANEL_BG, fg=ACCENT, font=self.ui_font(14, bold=True)).pack(pady=(0, self.px(6)))
+            tk.Label(panel, text=f"总评分  {total_score} / {len(LEVELS) * 1000}", bg=PANEL_BG, fg=ACCENT, font=self.ui_font(14, bold=True)).pack(pady=(0, self.px(10)))
         image_holder = tk.Frame(panel, bg=PANEL_BG)
-        image_holder.pack(pady=(2, 14))
+        image_holder.pack(pady=(self.px(2), self.px(14)))
         self.result_frames = self.fit_result_frames(self.load_result_image(passed))
         if self.result_frames:
             self.result_image_label = tk.Label(image_holder, image=self.result_frames[0], bg=PANEL_BG)
@@ -1258,7 +1274,7 @@ class ArrowEscapeGame:
         else:
             self.result_image_label = None
         self.make_button(panel, "重新挑战", lambda: self.load_level(0), width=18).pack()
-        self.make_button(panel, "返回主界面", self.show_start_screen, color=SECONDARY, width=18).pack(pady=10)
+        self.make_button(panel, "返回主界面", self.show_start_screen, color=SECONDARY, width=18).pack(pady=self.px(10))
 
     def restart_level(self):
         self.load_level(self.level_index)
