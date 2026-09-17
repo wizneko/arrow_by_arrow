@@ -5,6 +5,7 @@ from main import (
     DIRECTIONS,
     LEVELS,
     calculate_level_score,
+    find_clear_order,
     find_blocker_in_state,
     line_direction_stats,
 )
@@ -65,6 +66,15 @@ class ArrowGameLogicTests(unittest.TestCase):
                 self.assertIsNotNone(removable, f"{level['name']} contains a deadlock")
                 arrows[removable].active = False
                 cleared += 1
+
+    def test_ai_order_does_not_change_board_state(self):
+        level = LEVELS[2]
+        arrows = [Arrow(a.row, a.col, a.direction) for a in level["arrows"]]
+        before = [arrow.active for arrow in arrows]
+        order = find_clear_order(arrows, level["rows"], level["cols"])
+        self.assertIsNotNone(order)
+        self.assertEqual(before, [arrow.active for arrow in arrows])
+        self.assertEqual(len(order), len(arrows))
 
     def test_score_rewards_fast_clean_clear(self):
         for index, level in enumerate(LEVELS):

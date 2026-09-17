@@ -9,6 +9,11 @@ from dataclasses import dataclass
 
 from PIL import Image, ImageTk
 
+try:
+    import winsound
+except ImportError:  # pragma: no cover - non-Windows fallback
+    winsound = None
+
 
 WINDOW_BG = "#fff7ef"
 PANEL_BG = "#fffdf9"
@@ -40,6 +45,12 @@ FAIL_IMAGE_NAME = "result_fail"
 RESULT_IMAGE_BOX = (300, 240)
 RESULT_FRAME_DELAY_MS = 100
 SAVE_FILE_NAME = "savegame.json"
+SOUND_NAMES = {
+    "fly": "arrow_fly.wav",
+    "collision": "arrow_collision.wav",
+    "win": "level_win.wav",
+    "fail": "level_fail.wav",
+}
 
 DIRECTIONS = {
     "U": (-1, 0, "上"),
@@ -246,6 +257,32 @@ def find_blocker_in_state(arrows: list[Arrow], rows: int, cols: int, index: int)
     return None
 
 
+def find_clear_order(arrows: list[Arrow], rows: int, cols: int):
+    """Return a safe step-by-step order for the currently active arrows."""
+    original_active = [arrow.active for arrow in arrows]
+    active = {index for index, arrow in enumerate(arrows) if arrow.active}
+    order = []
+    try:
+        while active:
+            next_index = next(
+                (
+                    index
+                    for index in active
+                    if find_blocker_in_state(arrows, rows, cols, index) is None
+                ),
+                None,
+            )
+            if next_index is None:
+                return None
+            order.append(next_index)
+            arrows[next_index].active = False
+            active.remove(next_index)
+        return order
+    finally:
+        for arrow, was_active in zip(arrows, original_active):
+            arrow.active = was_active
+
+
 def enable_high_dpi():
     """Ask Windows to render the Tk window at native monitor DPI."""
     if sys.platform != "win32":
@@ -257,6 +294,22 @@ def enable_high_dpi():
             ctypes.windll.user32.SetProcessDPIAware()
         except (AttributeError, OSError):
             pass
+
+
+def play_sound(name):
+    """Play a short local effect without blocking Tkinter animations."""
+    if winsound is None:
+        return
+    filename = SOUND_NAMES.get(name)
+    if not filename:
+        return
+    path = os.path.join(ASSET_DIR, filename)
+    if not os.path.exists(path):
+        return
+    try:
+        winsound.PlaySound(path, winsound.SND_FILENAME | winsound.SND_ASYNC)
+    except (OSError, RuntimeError):
+        pass
 
 
 class RoundedButton(tk.Canvas):
@@ -395,6 +448,11 @@ class ArrowEscapeGame:
         self.cell_size = CELL
         self.message = tk.StringVar()
         self.timer_text = tk.StringVar(value="00:00")
+        self.ai_status = tk.StringVar(value="等待开始")
+        self.ai_solving = False
+        self.ai_after_id = None
+        self.ai_button = None
+        self.ai_step = 0
         self.container = tk.Frame(root, bg=WINDOW_BG)
         self.container.pack(fill="both", expand=True)
         self.show_start_screen()
@@ -464,6 +522,11 @@ class ArrowEscapeGame:
         if self.timer_id is not None:
             self.root.after_cancel(self.timer_id)
             self.timer_id = None
+        if self.ai_after_id is not None:
+            self.root.after_cancel(self.ai_after_id)
+            self.ai_after_id = None
+        self.ai_solving = False
+        self.ai_button = None
         self.stop_result_frame_playback()
         for widget in self.container.winfo_children():
             widget.destroy()
@@ -541,8 +604,8 @@ class ArrowEscapeGame:
 
     def make_button(self, parent, text, command, color=ACCENT_DARK, width=12):
         foreground = "#fffaf5" if color in (ACCENT_DARK, ACCENT, BUTTON_HOVER) else INK
-        button_width = max(116, round(width * 10 + 36))
-        button_height = 48
+        button_width = max(132, round(width * 11 + 42))
+        button_height = 52
         return RoundedButton(
             parent,
             text,
@@ -585,8 +648,8 @@ class ArrowEscapeGame:
         tk.Label(left, text="5 个关卡  ·  棋盘逐步变大  ·  每关独立计时", bg=PANEL_BG, fg=TEXT_MUTED, font=("Microsoft YaHei UI", 9)).pack(anchor="w", padx=28, pady=(6, 0))
         actions = tk.Frame(left, bg=PANEL_BG)
         actions.pack(fill="x", padx=28, pady=(30, 28))
-        self.make_button(actions, "开始游戏", lambda: self.load_level(0), width=18).pack(pady=(0, 14))
-        self.make_button(actions, "继续游戏", self.continue_saved_game, color=SECONDARY, width=18).pack(pady=(0, 14))
+        self.make_button(actions, "开始游戏", lambda: self.load_level(0), width=18).pack(pady=(0, 16))
+        self.make_button(actions, "继续游戏", self.continue_saved_game, color=SECONDARY, width=18).pack(pady=(0, 16))
         self.make_button(actions, "选择关卡", self.show_level_select, color=SECONDARY, width=18).pack()
 
         preview = tk.Frame(canvas, bg=PANEL_LIGHT, highlightthickness=1, highlightbackground=BORDER)
@@ -610,8 +673,8 @@ class ArrowEscapeGame:
             cell = tk.Frame(direction_guide, bg=ARROW_COLORS[direction], highlightthickness=1, highlightbackground="#ffffff")
             cell.grid(row=0, column=column, padx=(0 if column == 0 else 5, 0), sticky="nsew")
             direction_guide.grid_columnconfigure(column, weight=1)
-            tk.Label(cell, text=symbol, bg=ARROW_COLORS[direction], fg=INK, font=("Microsoft YaHei UI", 18, "bold")).pack(pady=(7, 0))
-            tk.Label(cell, text=name, bg=ARROW_COLORS[direction], fg=INK, font=("Microsoft YaHei UI", 9, "bold")).pack(pady=(0, 7))
+            tk.Label(cell, text=symbol, bg=ARROW_COLORS[direction], fg=INK, font=("Microsoft YaHei UI", 18, "bold")).pack(pady=(3, 0))
+            tk.Label(cell, text=name, bg=ARROW_COLORS[direction], fg=INK, font=("Microsoft YaHei UI", 9, "bold")).pack(pady=(0, 5))
 
         canvas.create_text(78, 812, text="快捷键：R 重开本关    H 查看提示    Esc 返回主菜单", anchor="w", fill=HELPER, font=("Microsoft YaHei UI", 10))
 
@@ -739,8 +802,8 @@ class ArrowEscapeGame:
         tk.Label(header, text="箭路突围", bg=WINDOW_BG, fg=ACCENT, font=("Microsoft YaHei UI", 16, "bold")).pack(side="left")
         tk.Label(header, text=f"  /  第 {index + 1} 关 · {level['name']}", bg=WINDOW_BG, fg=TEXT_MUTED, font=("Microsoft YaHei UI", 13, "bold")).pack(side="left")
         self.make_button(header, "主菜单", self.return_to_menu, color=SECONDARY, width=8).pack(side="right")
-        self.make_button(header, "保存", self.save_and_notify, color=SECONDARY, width=7).pack(side="right", padx=8)
-        self.make_button(header, "重新开始", self.restart_level, color=SECONDARY, width=9).pack(side="right", padx=8)
+        self.make_button(header, "保存", self.save_and_notify, color=SECONDARY, width=7).pack(side="right", padx=6)
+        self.make_button(header, "重新开始", self.restart_level, color=SECONDARY, width=9).pack(side="right", padx=6)
         self.make_button(header, "提示", self.show_hint, color=SECONDARY, width=7).pack(side="right")
 
         stats = tk.Frame(self.container, bg=WINDOW_BG, padx=44)
@@ -753,13 +816,32 @@ class ArrowEscapeGame:
 
         board_w = level["cols"] * self.cell_size + PADDING * 2
         board_h = level["rows"] * self.cell_size + PADDING * 2
-        board_holder = tk.Frame(self.container, bg=WINDOW_BG)
-        board_holder.pack(fill="both", expand=True, pady=16)
+        game_area = tk.Frame(self.container, bg=WINDOW_BG)
+        game_area.pack(fill="both", expand=True, pady=16, padx=44)
+        board_holder = tk.Frame(game_area, bg=WINDOW_BG)
+        board_holder.pack(side="left", fill="both", expand=True)
         self.canvas = tk.Canvas(board_holder, width=board_w, height=board_h, bg=BOARD_BG, highlightthickness=1, highlightbackground=BORDER)
         self.canvas.place(relx=0.5, rely=0.5, anchor="center")
         self.canvas.bind("<Button-1>", self.handle_click)
         self.canvas.bind("<Motion>", self.handle_motion)
         self.canvas.bind("<Leave>", lambda _e: self.set_hover(None))
+        ai_panel = tk.Frame(game_area, bg=PANEL_LIGHT, width=214, highlightthickness=1, highlightbackground=BORDER)
+        ai_panel.pack(side="right", fill="y", padx=(18, 0))
+        ai_panel.pack_propagate(False)
+        tk.Label(ai_panel, text="AI 助手", bg=PANEL_LIGHT, fg=TEXT, font=("Microsoft YaHei UI", 14, "bold")).pack(anchor="w", padx=18, pady=(22, 8))
+        tk.Label(
+            ai_panel,
+            text="AI 会寻找当前可行的箭头，逐步完成本关。",
+            wraplength=178,
+            justify="left",
+            bg=PANEL_LIGHT,
+            fg=TEXT_MUTED,
+            font=("Microsoft YaHei UI", 10),
+        ).pack(anchor="w", padx=18, pady=(0, 18))
+        self.ai_button = self.make_button(ai_panel, "AI 一键逐步求解", self.toggle_ai_solver, width=12)
+        self.ai_button.pack(padx=12, pady=(0, 18))
+        tk.Label(ai_panel, textvariable=self.ai_status, bg=PANEL_LIGHT, fg=ACCENT, font=("Microsoft YaHei UI", 10, "bold"), wraplength=178, justify="left").pack(anchor="w", padx=18)
+        tk.Label(ai_panel, text="AI 操作不会消耗误点次数。", bg=PANEL_LIGHT, fg=HELPER, font=("Microsoft YaHei UI", 9), wraplength=178, justify="left").pack(anchor="w", padx=18, pady=(18, 0))
         tk.Label(self.container, textvariable=self.message, bg=WINDOW_BG, fg=TEXT_MUTED, font=("Microsoft YaHei UI", 11)).pack(pady=(0, 6))
         tk.Label(self.container, text="沿箭头方向前方没有阻挡时，点击它即可离开", bg=WINDOW_BG, fg=HELPER, font=("Microsoft YaHei UI", 9)).pack()
         self.draw_board()
@@ -859,7 +941,7 @@ class ArrowEscapeGame:
         self.canvas.configure(cursor="hand2" if index is not None else "")
 
     def handle_click(self, event):
-        if self.animating:
+        if self.animating or self.ai_solving:
             return
         clicked = self.find_arrow_at(event.x, event.y)
         if clicked is None:
@@ -887,6 +969,7 @@ class ArrowEscapeGame:
 
     def fly_out(self, index):
         self.animating = True
+        play_sound("fly")
         session_id = self.session_id
         arrow = self.arrows[index]
         dr, dc, _ = DIRECTIONS[arrow.direction]
@@ -916,6 +999,7 @@ class ArrowEscapeGame:
 
     def block_arrow(self, index, blocker):
         self.animating = True
+        play_sound("collision")
         self.blocked_attempts += 1
         self.mistakes_left -= 1
         session_id = self.session_id
@@ -1008,9 +1092,15 @@ class ArrowEscapeGame:
                 self.save_progress(next_level=self.level_index + 1)
                 self.show_level_clear()
         else:
-            self.update_status("不错，棋盘正在逐步打开。")
+            if self.ai_solving:
+                self.ai_step += 1
+                self.ai_status.set(f"正在求解：已完成 {self.ai_step} 步")
+                self.ai_after_id = self.root.after(160, self.ai_solve_step)
+            else:
+                self.update_status("不错，棋盘正在逐步打开。")
 
     def show_level_clear(self):
+        play_sound("win")
         self.current_view = "level_clear"
         self.session_id += 1
         self.animating = False
@@ -1113,6 +1203,7 @@ class ArrowEscapeGame:
         self.result_frame_delays = []
 
     def show_result(self, passed):
+        play_sound("win" if passed else "fail")
         self.current_view = "result"
         self.result_passed = passed
         self.session_id += 1
@@ -1152,6 +1243,58 @@ class ArrowEscapeGame:
 
     def restart_level(self):
         self.load_level(self.level_index)
+
+    def toggle_ai_solver(self):
+        if self.current_view != "game" or not self.arrows:
+            return
+        if self.ai_solving:
+            self.ai_solving = False
+            if self.ai_after_id is not None:
+                self.root.after_cancel(self.ai_after_id)
+                self.ai_after_id = None
+            self.ai_status.set("已暂停，可以继续手动操作")
+            if self.ai_button is not None:
+                self.ai_button.configure(text="AI 一键逐步求解")
+            return
+        self.ai_solving = True
+        self.ai_step = 0
+        self.ai_status.set("正在分析当前棋盘...")
+        if self.ai_button is not None:
+            self.ai_button.configure(text="暂停 AI 求解")
+        self.ai_solve_step()
+
+    def ai_solve_step(self):
+        self.ai_after_id = None
+        if not self.ai_solving or self.current_view != "game" or self.animating:
+            return
+        index = next(
+            (
+                index
+                for index, arrow in enumerate(self.arrows)
+                if arrow.active and self.find_blocker(index) is None
+            ),
+            None,
+        )
+        if index is None:
+            self.ai_solving = False
+            self.ai_status.set("当前布局没有可行步骤")
+            if self.ai_button is not None:
+                self.ai_button.configure(text="AI 一键逐步求解")
+            return
+        circle, symbol = self.arrow_items[index]
+        self.canvas.itemconfig(circle, fill="#c7ffe9", outline=ACCENT, width=4)
+        self.canvas.itemconfig(symbol, fill="#527461", outline="#527461")
+        self.ai_status.set(f"第 {self.ai_step + 1} 步：找到可移出的箭头")
+        self.root.after(260, lambda i=index, sid=self.session_id: self.ai_execute_step(i, sid))
+
+    def ai_execute_step(self, index, session_id):
+        if session_id != self.session_id or not self.ai_solving or self.current_view != "game":
+            return
+        if index >= len(self.arrows) or not self.arrows[index].active or self.find_blocker(index) is not None:
+            self.ai_solve_step()
+            return
+        self.moves += 1
+        self.fly_out(index)
 
     def show_hint(self):
         if self.animating or not self.arrows:
